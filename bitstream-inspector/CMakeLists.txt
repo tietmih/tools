@@ -121,6 +121,9 @@ if(WIN32)
     if(MINGW)
         target_link_options(bsinspector PRIVATE -municode)
         target_link_options(bsinspector PRIVATE -static-libgcc -static-libstdc++)
+    elseif(MSVC)
+        # app.rc already embeds app.manifest; stop the linker adding a second one.
+        target_link_options(bsinspector PRIVATE /MANIFEST:NO)
     endif()
 endif()
 
