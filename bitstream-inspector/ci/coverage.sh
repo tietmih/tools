@@ -48,6 +48,8 @@ if ! command -v gcovr >/dev/null 2>&1; then
 fi
 mkdir -p "$OUT"
 gcovr --root "$ROOT" --filter "$ROOT/src" --object-directory "$BUILD" \
+    --exclude '.*/CMakeFiles/.*' \
+    --gcov-ignore-errors=no_working_dir_found \
     --xml-pretty --output "$OUT/coverage.xml" \
     --html-details "$OUT/index.html"
 echo "coverage report: $OUT/index.html"
