@@ -965,8 +965,8 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         case IDM_HELP_ABOUT:
             MessageBoxW(
                 hwnd,
-                L"Bitstream Inspector 0.1\n\n"
-                L"Annex B H.264/H.265 elementary stream analyzer.\n"
+                L"Bitstream Inspector 0.2.0\n\n"
+                L"Annex B and container H.264/H.265 analyzer.\n"
                 L"Independent implementation based on the published "
                 L"ITU-T H.264 and H.265 syntax specifications.\n\n"
                 L"Not affiliated with Elecard or any commercial product.",
@@ -1188,7 +1188,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = wndProc;
     wc.hInstance = inst;
-    wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    HICON app_icon = LoadIconW(inst, MAKEINTRESOURCEW(101));
+    if (!app_icon)
+        app_icon = LoadIconW(nullptr, IDI_APPLICATION);
+    wc.hIcon = app_icon;
+    wc.hIconSm = app_icon;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     wc.lpszClassName = kWindowClass;

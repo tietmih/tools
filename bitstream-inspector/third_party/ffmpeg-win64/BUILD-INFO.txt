@@ -17,3 +17,8 @@
 # Rebuild it with scripts/build_ffmpeg_mingw.sh rather than checking binaries
 # into git. The FFmpeg DLLs are linked dynamically and may be replaced with
 # compatible FFmpeg 7.1 builds. See COPYING.LGPLv2.1 for the license terms.
+#
+# Source code: FFmpeg n7.1.5 (https://ffmpeg.org/releases/ffmpeg-7.1.tar.gz,
+# tag n7.1.5 of the FFmpeg repository; a Gitee mirror of the same source was
+# used). The maintainer can provide the exact source archive used for this
+# build on request.

@@ -50,6 +50,37 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
   `%APPDATA%\BitstreamInspector\settings.ini`.
 - **Export**: frame list and NAL list as CSV (UTF-8 with BOM).
 
+## Install on Windows
+
+Run the installer produced by the packaging step below (the `.exe` is a build
+artifact and is not checked into git):
+```
+dist/BitstreamInspector-0.2.0-win64-setup.exe
+```
+
+The installer is per-user and needs no administrator rights or UAC prompt:
+
+- installs to `%LOCALAPPDATA%\Programs\BitstreamInspector`
+- creates Start Menu shortcuts and an optional desktop shortcut
+- registers an uninstaller in **Settings → Apps → Installed apps**
+- bundles the FFmpeg DLLs, the MIT license and the FFmpeg LGPL license/build info
+- requires 64-bit Windows 10/11
+
+The uninstaller removes the application, shortcuts and registry entries; it
+asks whether to keep your settings (`%APPDATA%\BitstreamInspector`) or delete
+them too. Silent install/uninstall is supported with `/S` (and `/D=path` for a
+custom install directory).
+
+## Releases
+
+The tool is released independently from the rest of the repository. The current
+version is **0.2.0**; tags use the form `bitstream-inspector-v0.2.0` and every
+tag has a matching GitHub Release with the Windows installer and
+`SHA256SUMS` attached.
+
+See [CHANGELOG.md](CHANGELOG.md) for the change history and
+[docs/releases/](docs/releases/) for the notes attached to each release.
+
 ## Requirements
 
 - Windows 10/11 x86-64 for the GUI.
@@ -95,6 +126,26 @@ and the FFmpeg media layer are only built on Windows targets.
 The same CMake project builds with MSVC (`cmake -B build-msvc -G "Visual
 Studio 17 2022"`); the FFmpeg layer requires matching MSVC import libraries.
 
+### Build the Windows installer
+
+The installer uses NSIS and packages an existing `build-win` tree (GUI, CLI and
+the four required FFmpeg DLLs):
+
+```bash
+# NSIS is needed on the Linux host: sudo apt install nsis
+bash installer/build_installer.sh
+
+# optional: choose another build directory
+bash installer/build_installer.sh /path/to/build-win
+```
+
+Output: `dist/BitstreamInspector-<version>-win64-setup.exe`. The installer is
+per-user, creates Start Menu/desktop shortcuts, adds an entry under
+**Settings → Apps**, and includes `Uninstall.exe`.
+
+The installer executable is unsigned, so SmartScreen may ask for confirmation
+the first time it is downloaded and run.
+
 ## Command-line tools
 
 `bsinfo` validates the parser without the GUI:
@@ -125,6 +176,7 @@ Checked against independent references, not just "it compiles":
 | Decoded frames vs FFmpeg reference, real encoder output (H.264/H.265 in MP4/TS/MKV) | PSNR = inf (pixel-identical) |
 | ASan + UBSan over all test streams, then 300 mutation-fuzz iterations | no findings |
 | Windows runtime: container open, frame navigation, splitter drag, CSV export, layout persistence | verified by screenshot/automation |
+| Windows installer: silent install → launch installed app → silent uninstall | files, Start Menu/desktop shortcuts, HKCU uninstall entry and clean removal verified |
 
 Not verified: manual feel of every mouse interaction, very large files, exotic
 containers.
@@ -149,8 +201,10 @@ src/core/     portable bitstream parsing (bit reader, NAL splitter, H.264/H.265 
 src/media/    optional FFmpeg demux + decode layer (no FFmpeg types leak out)
 src/ui/       Win32 GUI (frame list, syntax tree, hex view, video view, chart)
 tools/        bsinfo and mtest command-line utilities
-scripts/      build_ffmpeg_mingw.sh
-res/          manifest and resources
+scripts/      build_ffmpeg_mingw.sh and make_icon.py
+installer/    NSIS script, license page and build_installer.sh
+res/          manifest, icon and resources
+dist/         generated installer output (ignored by git)
 ```
 
 ## License
