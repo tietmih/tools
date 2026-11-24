@@ -702,7 +702,18 @@ void parseH264SliceHeader(BitReader &br, SyntaxBuilder *sb, H264State &state,
     if (br.fail())
         return;
 
-    // POC derivation (8.2.1)
+    // POC derivation (8.2.1). FrameNumOffset accumulates across frame_num
+    // wrap-arounds; using only max_frame_num resets the POC at the second
+    // wrap inside one IDR period.
+    int max_frame_num = 1 << (sps.log2_max_frame_num_minus4 + 4);
+    int frame_num_offset;
+    if (info.idr)
+        frame_num_offset = 0;
+    else if (state.prev_frame_num_valid && state.prev_frame_num > info.frame_num)
+        frame_num_offset = state.prev_frame_num_offset + max_frame_num;
+    else
+        frame_num_offset = state.prev_frame_num_offset;
+
     int poc = 0;
     int poc_msb = 0;
     if (sps.pic_order_cnt_type == 0) {
@@ -736,12 +747,6 @@ void parseH264SliceHeader(BitReader &br, SyntaxBuilder *sb, H264State &state,
         }
         poc = std::min(top, bottom);
     } else if (sps.pic_order_cnt_type == 1) {
-        int max_frame_num = 1 << (sps.log2_max_frame_num_minus4 + 4);
-        int frame_num_offset = 0;
-        if (!info.idr) {
-            if (state.prev_frame_num_valid && state.prev_frame_num > info.frame_num)
-                frame_num_offset = max_frame_num;
-        }
         int abs_frame_num = 0;
         int cycle_len = static_cast<int>(sps.offset_for_ref_frame.size());
         if (cycle_len > 0)
@@ -776,10 +781,6 @@ void parseH264SliceHeader(BitReader &br, SyntaxBuilder *sb, H264State &state,
         }
         poc = std::min(top, bottom);
     } else {
-        int max_frame_num = 1 << (sps.log2_max_frame_num_minus4 + 4);
-        int frame_num_offset = 0;
-        if (!info.idr && state.prev_frame_num_valid && state.prev_frame_num > info.frame_num)
-            frame_num_offset = max_frame_num;
         if (info.idr)
             poc = 0;
         else if (info.nal_ref_idc == 0)
@@ -801,6 +802,7 @@ void parseH264SliceHeader(BitReader &br, SyntaxBuilder *sb, H264State &state,
         }
         state.prev_frame_num = info.frame_num;
         state.prev_frame_num_valid = true;
+        state.prev_frame_num_offset = frame_num_offset;
     }
 }
 
