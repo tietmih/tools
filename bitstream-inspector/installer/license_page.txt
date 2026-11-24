@@ -34,3 +34,16 @@ FFmpeg project: https://ffmpeg.org/ (source version 7.1.5)
 
 The FFmpeg DLLs are loaded from the application directory and can be replaced
 with compatible FFmpeg 7.1 builds.
+
+------------------------------------------------------------------------------
+简体中文说明
+
+Bitstream Inspector 采用 MIT 许可证（全文见 LICENSES\MIT.txt）。
+
+本程序动态链接 FFmpeg 7.1.5 共享库，仅启用 LGPL 兼容组件（无 GPL、无
+non-free 代码）。FFmpeg 使用 GNU Lesser General Public License v2.1，
+许可证全文见 LICENSES\FFmpeg-LGPLv2.1.txt，精确构建参数见
+LICENSES\FFmpeg-BUILD-INFO.txt 和 FFmpeg-BUILD-INFO.zh-CN.txt。
+FFmpeg DLL 从应用程序目录加载，可替换为兼容的 FFmpeg 7.1 构建。
+
+以上英文部分为许可证原文；中文仅为方便阅读的说明，法律效力以英文原文为准。

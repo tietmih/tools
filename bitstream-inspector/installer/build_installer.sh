@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PROJECT="$ROOT/bitstream-inspector"
 BUILD_DIR=${1:-"$PROJECT/build-win"}
-VERSION=${VERSION:-0.2.0}
+VERSION=${VERSION:-0.3.0}
 STAGE="$PROJECT/installer/staging"
 DIST="$ROOT/dist"
 APP_ICON="$PROJECT/res/app.ico"
@@ -24,7 +24,9 @@ done
 for f in "$ROOT/LICENSE" \
          "$PROJECT/third_party/ffmpeg-win64/COPYING.LGPLv2.1" \
          "$PROJECT/third_party/ffmpeg-win64/BUILD-INFO.txt" \
-         "$PROJECT/README.md"; do
+         "$PROJECT/third_party/ffmpeg-win64/BUILD-INFO.zh-CN.txt" \
+         "$PROJECT/README.md" \
+         "$PROJECT/README.zh-CN.md"; do
     if [ ! -f "$f" ]; then
         echo "error: missing $f" >&2
         exit 1
@@ -39,9 +41,11 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/LICENSES" "$DIST"
 cp "$BUILD_DIR"/{bsinspector.exe,bsinfo.exe,avcodec-61.dll,avformat-61.dll,avutil-59.dll,swscale-8.dll} "$STAGE/"
 cp "$PROJECT/README.md" "$STAGE/README.md"
+cp "$PROJECT/README.zh-CN.md" "$STAGE/README.zh-CN.md"
 cp "$ROOT/LICENSE" "$STAGE/LICENSES/MIT.txt"
 cp "$PROJECT/third_party/ffmpeg-win64/COPYING.LGPLv2.1" "$STAGE/LICENSES/FFmpeg-LGPLv2.1.txt"
 cp "$PROJECT/third_party/ffmpeg-win64/BUILD-INFO.txt" "$STAGE/LICENSES/FFmpeg-BUILD-INFO.txt"
+cp "$PROJECT/third_party/ffmpeg-win64/BUILD-INFO.zh-CN.txt" "$STAGE/LICENSES/FFmpeg-BUILD-INFO.zh-CN.txt"
 
 MAKENSIS=${MAKENSIS:-}
 if [ -z "$MAKENSIS" ]; then
@@ -65,5 +69,6 @@ cd "$PROJECT/installer"
     -DSTAGE_DIR="$STAGE" \
     bitstream-inspector.nsi
 
-ls -lh "$OUT"
+( cd "$DIST" && sha256sum "$(basename "$OUT")" > SHA256SUMS )
+ls -lh "$OUT" "$DIST/SHA256SUMS"
 echo "installer ready: $OUT"
