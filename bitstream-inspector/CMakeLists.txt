@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(bsinspector VERSION 0.2.0 LANGUAGES CXX)
+project(bsinspector VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -65,6 +65,7 @@ if(WIN32)
         src/ui/hex_view.cpp
         src/ui/video_view.cpp
         src/ui/chart_view.cpp
+        src/ui/lang.cpp
         src/ui/ui_util.cpp
         res/app.rc
     )

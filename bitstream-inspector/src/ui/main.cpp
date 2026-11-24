@@ -17,6 +17,7 @@
 #include "ui/frame_list.h"
 #include "ui/hex_view.h"
 #include "ui/syntax_tree.h"
+#include "ui/lang.h"
 #include "ui/ui_util.h"
 #include "ui/video_view.h"
 #ifdef BS_HAVE_FFMPEG
@@ -52,17 +53,32 @@ enum : int {
     IDM_VIEW_PREV_KEY = 2104,
     IDM_VIEW_NEXT_KEY = 2105,
     IDM_HELP_ABOUT = 2201,
+    IDM_LANG_EN = 2301,
+    IDM_LANG_ZH = 2302,
 };
 
 const wchar_t kWindowClass[] = L"BsInspectorMain";
 const wchar_t kTitle[] = L"Bitstream Inspector";
-const wchar_t kFilter[] =
+const wchar_t kFilterEn[] =
     L"Media streams (*.mp4;*.mov;*.m4v;*.ts;*.m2ts;*.mts;*.mkv;*.webm;"
     L"*.h264;*.264;*.avc;*.h265;*.265;*.hevc)\0"
     L"*.mp4;*.mov;*.m4v;*.ts;*.m2ts;*.mts;*.mkv;*.webm;"
     L"*.h264;*.264;*.avc;*.h265;*.265;*.hevc\0"
     L"Annex B elementary streams\0*.h264;*.264;*.avc;*.h265;*.265;*.hevc\0"
     L"All files (*.*)\0*.*\0";
+const wchar_t kFilterZh[] =
+    L"媒体文件 (*.mp4;*.mov;*.m4v;*.ts;*.m2ts;*.mts;*.mkv;*.webm;"
+    L"*.h264;*.264;*.avc;*.h265;*.265;*.hevc)\0"
+    L"*.mp4;*.mov;*.m4v;*.ts;*.m2ts;*.mts;*.mkv;*.webm;"
+    L"*.h264;*.264;*.avc;*.h265;*.265;*.hevc\0"
+    L"裸流 (*.h264;*.264;*.avc;*.h265;*.265;*.hevc)\0"
+    L"*.h264;*.264;*.avc;*.h265;*.265;*.hevc\0"
+    L"所有文件 (*.*)\0*.*\0";
+
+const wchar_t *filterForLanguage()
+{
+    return language() == Lang::Zh ? kFilterZh : kFilterEn;
+}
 
 struct App {
     HINSTANCE inst = nullptr;
@@ -202,43 +218,100 @@ std::wstring containerLabel(const ContainerInfo &info)
     else if (format == L"hevc")
         format = L"HEVC ES";
     if (format.empty())
-        format = L"file";
+        format = tr(L"file", L"文件");
     if (info.duration_ms > 0)
         format += L"  " + std::to_wstring((info.duration_ms + 500) / 1000) +
-                  L"s";
+                  tr(L"s", L"秒");
     return format;
 }
 #endif
+
+std::wstring streamSummaryText()
+{
+    const Stream &stream = g_app.stream;
+    std::wstring text = wide(codecName(stream.codec()));
+    if (stream.codec() == Codec::H264 && stream.haveH264Params()) {
+        const H264Sps &sps = stream.h264Sps();
+        if (sps.width() > 0 && sps.height() > 0) {
+            text += L" | " + std::to_wstring(sps.width()) + L"x" +
+                    std::to_wstring(sps.height());
+            text += L" | " + wide(h264ProfileName(sps.profile_idc)) + L"@" +
+                    wide(h264LevelName(sps.level_idc));
+            double fps = sps.fps();
+            if (fps > 0.0) {
+                wchar_t buf[32];
+                swprintf(buf, 32, L" | %.3f fps", fps);
+                text += buf;
+            }
+        }
+    } else if (stream.codec() == Codec::H265 && stream.haveH265Params()) {
+        const H265Sps &sps = stream.h265Sps();
+        if (sps.display_width() > 0 && sps.display_height() > 0) {
+            text += L" | " + std::to_wstring(sps.display_width()) + L"x" +
+                    std::to_wstring(sps.display_height());
+            text += L" | " + wide(h265ProfileName(sps.ptl.profile_idc)) + L"@" +
+                    wide(h265LevelName(sps.ptl.level_idc));
+            double fps = sps.fps();
+            if (fps > 0.0) {
+                wchar_t buf[32];
+                swprintf(buf, 32, L" | %.3f fps", fps);
+                text += buf;
+            }
+        }
+    }
+    text += L" | " + std::to_wstring(stream.nals().size()) +
+            tr(L" NAL, ", L" NAL，") +
+            std::to_wstring(stream.frames().size()) + tr(L" frames", L" 帧");
+    return text;
+}
+
+std::wstring streamInfoText()
+{
+    std::wstring summary = streamSummaryText();
+#ifdef BS_HAVE_FFMPEG
+    if (g_app.media)
+        summary = containerLabel(g_app.media->info()) + L"  |  " + summary;
+#endif
+    return summary;
+}
 
 void createMenu(HWND hwnd)
 {
     HMENU menu = CreateMenu();
     HMENU file = CreatePopupMenu();
-    AppendMenuW(file, MF_STRING, IDM_FILE_OPEN, L"&Open...\tCtrl+O");
+    AppendMenuW(file, MF_STRING, IDM_FILE_OPEN, tr(L"&Open...\tCtrl+O", L"打开(&O)...\tCtrl+O"));
     AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(file, MF_STRING, IDM_FILE_EXPORT_FRAMES,
-                L"Export &Frame List (CSV)...\tCtrl+E");
+                tr(L"Export &Frame List (CSV)...\tCtrl+E", L"导出帧列表 CSV(&F)...\tCtrl+E"));
     AppendMenuW(file, MF_STRING, IDM_FILE_EXPORT_NALS,
-                L"Export &NAL List (CSV)...");
+                tr(L"Export &NAL List (CSV)...", L"导出 NAL 列表 CSV(&N)..."));
     AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(file, MF_STRING, IDM_FILE_EXIT, L"E&xit");
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
+    AppendMenuW(file, MF_STRING, IDM_FILE_EXIT, tr(L"E&xit", L"退出(&X)"));
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), tr(L"&File", L"文件(&F)"));
 
     HMENU view = CreatePopupMenu();
-    AppendMenuW(view, MF_STRING, IDM_VIEW_PREV, L"&Previous Frame\tAlt+Left");
-    AppendMenuW(view, MF_STRING, IDM_VIEW_NEXT, L"&Next Frame\tAlt+Right");
+    AppendMenuW(view, MF_STRING, IDM_VIEW_PREV, tr(L"&Previous Frame\tAlt+Left", L"上一帧(&P)\tAlt+Left"));
+    AppendMenuW(view, MF_STRING, IDM_VIEW_NEXT, tr(L"&Next Frame\tAlt+Right", L"下一帧(&N)\tAlt+Right"));
     AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(view, MF_STRING, IDM_VIEW_PREV_KEY,
-                L"Previous &Keyframe\tShift+Left");
+                tr(L"Previous &Keyframe\tShift+Left", L"上一个关键帧(&K)\tShift+Left"));
     AppendMenuW(view, MF_STRING, IDM_VIEW_NEXT_KEY,
-                L"Next K&eyframe\tShift+Right");
+                tr(L"Next K&eyframe\tShift+Right", L"下一个关键帧(&E)\tShift+Right"));
     AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(view, MF_STRING, IDM_VIEW_RELOAD, L"&Reload\tF5");
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&View");
+    AppendMenuW(view, MF_STRING, IDM_VIEW_RELOAD, tr(L"&Reload\tF5", L"重新加载(&R)\tF5"));
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), tr(L"&View", L"视图(&V)"));
+
+    HMENU lang = CreatePopupMenu();
+    AppendMenuW(lang, MF_STRING | (language() == Lang::En ? MF_CHECKED : 0),
+                IDM_LANG_EN, L"&English");
+    AppendMenuW(lang, MF_STRING | (language() == Lang::Zh ? MF_CHECKED : 0),
+                IDM_LANG_ZH, L"简体中文(&C)");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(lang),
+                tr(L"&Language", L"语言(&L)"));
 
     HMENU help = CreatePopupMenu();
-    AppendMenuW(help, MF_STRING, IDM_HELP_ABOUT, L"&About");
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(help), L"&Help");
+    AppendMenuW(help, MF_STRING, IDM_HELP_ABOUT, tr(L"&About", L"关于(&A)"));
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(help), tr(L"&Help", L"帮助(&H)"));
 
     SetMenu(hwnd, menu);
 }
@@ -327,6 +400,7 @@ std::wstring settingsPath()
     return dir + L"\\settings.ini";
 }
 
+static int readLanguageSetting(const std::wstring &path);
 void loadSettings()
 {
     std::wstring path = settingsPath();
@@ -342,6 +416,14 @@ void loadSettings()
         tree = 55;
     g_app.left_ratio = static_cast<float>(left) / 100.0f;
     g_app.tree_ratio = static_cast<float>(tree) / 100.0f;
+
+    int lang = readLanguageSetting(path);
+    setLanguage(lang == 2 ? Lang::Zh : Lang::En);
+}
+
+static int readLanguageSetting(const std::wstring &path)
+{
+    return GetPrivateProfileIntW(L"ui", L"language", 1, path.c_str());
 }
 
 void saveSettings()
@@ -357,6 +439,9 @@ void saveSettings()
                                path.c_str());
     WritePrivateProfileStringW(L"layout", L"tree_percent", tree.c_str(),
                                path.c_str());
+    std::wstring lang = std::to_wstring(language() == Lang::Zh ? 2 : 1);
+    WritePrivateProfileStringW(L"ui", L"language", lang.c_str(),
+                               path.c_str());
 }
 
 void updateStatus()
@@ -365,7 +450,7 @@ void updateStatus()
         return;
     std::wstring left;
     if (!g_app.loaded) {
-        left = L"No file loaded";
+        left = tr(L"No file loaded", L"未打开文件");
     } else {
         left = baseName(g_app.path) + L"  |  " +
                wide(g_app.stream.streamSummary());
@@ -378,22 +463,22 @@ void updateStatus()
         g_app.current_frame < static_cast<int>(g_app.stream.frames().size())) {
         const FrameInfo &f =
             g_app.stream.frames()[static_cast<size_t>(g_app.current_frame)];
-        right = L"frame " + std::to_wstring(g_app.current_frame + 1) + L"/" +
+        right = std::wstring(tr(L"frame ", L"帧 ")) + std::to_wstring(g_app.current_frame + 1) + L"/" +
                 std::to_wstring(g_app.stream.frames().size()) + L"   " +
                 wide(g_app.stream.frameTypeName(f)) + L"   POC " +
                 std::to_wstring(f.poc) + L"   QP " + std::to_wstring(f.qp) +
-                L"   " + std::to_wstring(f.byte_size) + L" B";
+                L"   " + std::to_wstring(f.byte_size) + tr(L" B", L" 字节");
         SyntaxTree::Selection sel = g_app.syntax_tree.selection();
         if (sel.nal < g_app.stream.nals().size()) {
             const NalEntry &nal = g_app.stream.nals()[sel.nal];
-            right += L"   |   NAL " + std::to_wstring(sel.nal) + L" " +
-                     shortNalName(g_app.stream, nal) + L"  off 0x";
+            right += tr(L"   |   NAL ", L"   |   NAL ") + std::to_wstring(sel.nal) + L" " +
+                     shortNalName(g_app.stream, nal) + tr(L"  off 0x", L"  偏移 0x");
             wchar_t hex[16];
             swprintf(hex, 16, L"%X",
                      static_cast<unsigned>(nal.unit.payload_off));
             right += hex;
             if (sel.bit_len)
-                right += L"  bits " + std::to_wstring(sel.bit_pos) + L".." +
+                right += tr(L"  bits ", L"  位 ") + std::to_wstring(sel.bit_pos) + L".." +
                          std::to_wstring(sel.bit_pos + sel.bit_len - 1);
         }
     }
@@ -511,8 +596,8 @@ void resetUi()
     g_app.path.clear();
     SetWindowTextW(g_app.hwnd, kTitle);
     SetWindowTextW(g_app.info,
-                   L"Open an H.264/H.265 Annex B elementary stream "
-                   L"(Ctrl+O, or drag and drop)");
+                   tr(L"Open a media file (Ctrl+O, or drag and drop)",
+                      L"打开媒体文件（Ctrl+O，或拖放文件）"));
     EnableWindow(g_app.btn_prev, FALSE);
     EnableWindow(g_app.btn_next, FALSE);
     EnableWindow(g_app.btn_prev_key, FALSE);
@@ -526,7 +611,7 @@ void resetUi()
     g_app.container = ContainerInfo();
 #endif
     g_app.video_frame = -1;
-    g_app.video_view.clear(L"Open a media file to decode");
+    g_app.video_view.clear(tr(L"Open a media file to decode", L"打开媒体文件后可解码"));
     updateStatus();
 }
 
@@ -622,7 +707,7 @@ void requestVideo(int frame)
         return;
     if (!g_app.media || frame < 0) {
         g_app.video_frame = -1;
-        g_app.video_view.clear(L"Open a media file to decode");
+        g_app.video_view.clear(tr(L"Open a media file to decode", L"打开媒体文件后可解码"));
         return;
     }
     if (g_app.video_frame == frame)
@@ -634,8 +719,49 @@ void requestVideo(int frame)
     SetEvent(g_app.video_event);
 #else
     (void)frame;
-    g_app.video_view.clear(L"FFmpeg media layer not built");
+    g_app.video_view.clear(tr(L"FFmpeg media layer not built", L"未构建 FFmpeg 媒体层"));
 #endif
+}
+
+void applyLanguage(HWND hwnd)
+{
+    HMENU old_menu = GetMenu(hwnd);
+    createMenu(hwnd);
+    if (old_menu)
+        DestroyMenu(old_menu);
+    DrawMenuBar(hwnd);
+
+    SetWindowTextW(g_app.btn_open, tr(L"Open...", L"打开..."));
+    SetWindowTextW(g_app.btn_prev, tr(L"< Prev", L"< 上一帧"));
+    SetWindowTextW(g_app.btn_next, tr(L"Next >", L"下一帧 >"));
+    SetWindowTextW(g_app.btn_prev_key, tr(L"Prev Key", L"上个关键帧"));
+    SetWindowTextW(g_app.btn_next_key, tr(L"Next Key", L"下个关键帧"));
+
+    if (g_app.tabs) {
+        TCITEMW item = {};
+        item.mask = TCIF_TEXT;
+        item.pszText = const_cast<wchar_t *>(tr(L"Hex", L"十六进制"));
+        TabCtrl_SetItem(g_app.tabs, 0, &item);
+        item.pszText = const_cast<wchar_t *>(tr(L"Video", L"画面"));
+        TabCtrl_SetItem(g_app.tabs, 1, &item);
+    }
+    g_app.frame_list.updateHeaders();
+
+    if (g_app.loaded)
+        SetWindowTextW(g_app.info, streamInfoText().c_str());
+    else
+        SetWindowTextW(g_app.info,
+                       tr(L"Open a media file (Ctrl+O, or drag and drop)",
+                          L"打开媒体文件（Ctrl+O，或拖放文件）"));
+
+    g_app.chart.invalidate();
+    InvalidateRect(g_app.hex_view.hwnd(), nullptr, FALSE);
+    g_app.video_frame = -1;
+    g_app.video_view.clear(tr(L"Select a frame to decode", L"选择一帧进行解码"));
+    if (g_app.loaded && g_app.current_frame >= 0)
+        requestVideo(g_app.current_frame);
+    updateStatus();
+    saveSettings();
 }
 
 void updateNavButtons();
@@ -734,17 +860,18 @@ void openFile(const std::wstring &path)
     if (!ok) {
         if (error.empty())
             error = "cannot open file";
-        MessageBoxW(g_app.hwnd, wide(error).c_str(), L"Open failed",
+        MessageBoxW(g_app.hwnd, wide(error).c_str(), tr(L"Open failed", L"打开失败"),
                     MB_OK | MB_ICONERROR);
         return; // keep the previously loaded stream
     }
     if (loaded.frames().empty()) {
         std::wstring message =
             error.empty()
-                ? L"No access units could be identified. The file may not be "
-                  L"a supported H.264/H.265 stream."
+                ? tr(L"No access units could be identified. The file may not be "
+                     L"a supported H.264/H.265 stream.",
+                     L"无法识别任何图像单元。该文件可能不是受支持的 H.264/H.265 码流。")
                 : wide(error);
-        MessageBoxW(g_app.hwnd, message.c_str(), L"Open failed",
+        MessageBoxW(g_app.hwnd, message.c_str(), tr(L"Open failed", L"打开失败"),
                     MB_OK | MB_ICONWARNING);
         return; // keep the previously loaded stream
     }
@@ -760,12 +887,7 @@ void openFile(const std::wstring &path)
 #endif
     SetWindowTextW(g_app.hwnd,
                    (std::wstring(kTitle) + L" - " + baseName(path)).c_str());
-    std::wstring summary = wide(g_app.stream.streamSummary());
-#ifdef BS_HAVE_FFMPEG
-    if (g_app.media)
-        summary = containerLabel(g_app.media->info()) + L"  |  " + summary;
-#endif
-    SetWindowTextW(g_app.info, summary.c_str());
+    SetWindowTextW(g_app.info, streamInfoText().c_str());
     EnableWindow(g_app.btn_prev, FALSE);
     EnableWindow(g_app.btn_next, g_app.stream.frames().size() > 1);
     EnableWindow(g_app.btn_prev_key, FALSE);
@@ -775,7 +897,7 @@ void openFile(const std::wstring &path)
     g_app.chart.setStream(&g_app.stream);
     g_app.syntax_tree.clear();
     g_app.hex_view.clear();
-    g_app.video_view.clear(L"Select a frame to decode");
+    g_app.video_view.clear(tr(L"Select a frame to decode", L"选择一帧进行解码"));
 
     startVideoWorker();
     selectFrame(0);
@@ -788,10 +910,10 @@ void openDialog(HWND hwnd)
     OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hwnd;
-    ofn.lpstrFilter = kFilter;
+    ofn.lpstrFilter = filterForLanguage();
     ofn.lpstrFile = file;
     ofn.nMaxFile = 32768;
-    ofn.lpstrTitle = L"Open media file";
+    ofn.lpstrTitle = tr(L"Open media file", L"打开媒体文件");
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER;
     if (GetOpenFileNameW(&ofn))
         openFile(file);
@@ -809,7 +931,7 @@ std::wstring defaultExportName(const wchar_t *suffix)
 void exportCsv(bool frames)
 {
     if (!g_app.loaded) {
-        MessageBoxW(g_app.hwnd, L"Open a stream before exporting.", kTitle,
+        MessageBoxW(g_app.hwnd, tr(L"Open a stream before exporting.", L"请先打开码流再导出。"), kTitle,
                     MB_OK | MB_ICONINFORMATION);
         return;
     }
@@ -821,11 +943,13 @@ void exportCsv(bool frames)
     OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = g_app.hwnd;
-    ofn.lpstrFilter = L"CSV files (*.csv)\0*.csv\0All files (*.*)\0*.*\0";
+    ofn.lpstrFilter = tr(L"CSV files (*.csv)\0*.csv\0All files (*.*)\0*.*\0",
+                         L"CSV 文件 (*.csv)\0*.csv\0所有文件 (*.*)\0*.*\0");
     ofn.lpstrFile = file;
     ofn.nMaxFile = 32768;
     ofn.lpstrDefExt = L"csv";
-    ofn.lpstrTitle = frames ? L"Export frame list" : L"Export NAL list";
+    ofn.lpstrTitle = frames ? tr(L"Export frame list", L"导出帧列表")
+                              : tr(L"Export NAL list", L"导出 NAL 列表");
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_EXPLORER;
     if (!GetSaveFileNameW(&ofn))
         return;
@@ -833,15 +957,17 @@ void exportCsv(bool frames)
     std::string data("\xEF\xBB\xBF", 3);
     data += frames ? g_app.stream.framesCsv() : g_app.stream.nalsCsv();
     if (!writeFileW(file, data)) {
-        MessageBoxW(g_app.hwnd, L"Cannot write the CSV file.", L"Export failed",
+        MessageBoxW(g_app.hwnd, tr(L"Cannot write the CSV file.", L"无法写入 CSV 文件。"),
+                    tr(L"Export failed", L"导出失败"),
                     MB_OK | MB_ICONERROR);
         return;
     }
     size_t count = frames ? g_app.stream.frames().size()
                           : g_app.stream.nals().size();
-    std::wstring message = L"Exported " + std::to_wstring(count) +
-                           (frames ? L" frame rows." : L" NAL rows.");
-    MessageBoxW(g_app.hwnd, message.c_str(), L"Export complete",
+    std::wstring message = tr(L"Exported ", L"已导出 ") + std::to_wstring(count) +
+                           (frames ? tr(L" frame rows.", L" 行帧记录。")
+                                   : tr(L" NAL rows.", L" 行 NAL 记录。"));
+    MessageBoxW(g_app.hwnd, message.c_str(), tr(L"Export complete", L"导出完成"),
                 MB_OK | MB_ICONINFORMATION);
 }
 
@@ -854,17 +980,18 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         g_app.video_lock_ready = true;
         g_app.video_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
         g_app.video_stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        loadSettings();
         DragAcceptFiles(hwnd, TRUE);
         createMenu(hwnd);
-        g_app.btn_open = makeButton(hwnd, L"Open...", IDC_BTN_OPEN);
-        g_app.btn_prev = makeButton(hwnd, L"< Prev", IDC_BTN_PREV);
-        g_app.btn_next = makeButton(hwnd, L"Next >", IDC_BTN_NEXT);
-        g_app.btn_prev_key = makeButton(hwnd, L"Prev Key", IDC_BTN_PREV_KEY);
-        g_app.btn_next_key = makeButton(hwnd, L"Next Key", IDC_BTN_NEXT_KEY);
+        g_app.btn_open = makeButton(hwnd, tr(L"Open...", L"打开..."), IDC_BTN_OPEN);
+        g_app.btn_prev = makeButton(hwnd, tr(L"< Prev", L"< 上一帧"), IDC_BTN_PREV);
+        g_app.btn_next = makeButton(hwnd, tr(L"Next >", L"下一帧 >"), IDC_BTN_NEXT);
+        g_app.btn_prev_key = makeButton(hwnd, tr(L"Prev Key", L"上个关键帧"), IDC_BTN_PREV_KEY);
+        g_app.btn_next_key = makeButton(hwnd, tr(L"Next Key", L"下个关键帧"), IDC_BTN_NEXT_KEY);
         g_app.info = CreateWindowExW(
             0, L"STATIC",
-            L"Open an H.264/H.265 Annex B elementary stream "
-            L"(Ctrl+O, or drag and drop)",
+            tr(L"Open a media file (Ctrl+O, or drag and drop)",
+               L"打开媒体文件（Ctrl+O，或拖放文件）"),
             WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE | SS_ENDELLIPSIS,
             0, 0, 0, 0, hwnd,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_INFO)),
@@ -890,15 +1017,14 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
                      reinterpret_cast<WPARAM>(uiFont()), TRUE);
         TCITEMW tab_item = {};
         tab_item.mask = TCIF_TEXT;
-        tab_item.pszText = const_cast<wchar_t *>(L"Hex");
+        tab_item.pszText = const_cast<wchar_t *>(tr(L"Hex", L"十六进制"));
         TabCtrl_InsertItem(g_app.tabs, 0, &tab_item);
-        tab_item.pszText = const_cast<wchar_t *>(L"Video");
+        tab_item.pszText = const_cast<wchar_t *>(tr(L"Video", L"画面"));
         TabCtrl_InsertItem(g_app.tabs, 1, &tab_item);
         g_app.active_tab = 1;
         TabCtrl_SetCurSel(g_app.tabs, g_app.active_tab);
         g_app.video_view.create(hwnd, g_app.inst, IDC_VIDEO_VIEW);
         g_app.chart.create(hwnd, g_app.inst, IDC_CHART);
-        loadSettings();
         layout(hwnd);
         resetUi();
         startVideoWorker();
@@ -965,13 +1091,26 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         case IDM_HELP_ABOUT:
             MessageBoxW(
                 hwnd,
-                L"Bitstream Inspector 0.2.0\n\n"
-                L"Annex B and container H.264/H.265 analyzer.\n"
-                L"Independent implementation based on the published "
-                L"ITU-T H.264 and H.265 syntax specifications.\n\n"
-                L"Not affiliated with Elecard or any commercial product.",
+                tr(L"Bitstream Inspector 0.3.0\n\n"
+                   L"Annex B and container H.264/H.265 analyzer.\n"
+                   L"Independent implementation based on the published "
+                   L"ITU-T H.264 and H.265 syntax specifications.\n\n"
+                   L"Not affiliated with Elecard or any commercial product.",
+                   L"码流分析器 0.3.0\n\n"
+                   L"支持 Annex B 裸流与容器封装的 H.264/H.265 分析。\n"
+                   L"基于公开的 ITU-T H.264/H.265 语法规范独立实现。\n\n"
+                   L"与 Elecard 或任何商业产品无关联。"),
                 kTitle, MB_OK | MB_ICONINFORMATION);
             return 0;
+        case IDM_LANG_EN:
+        case IDM_LANG_ZH: {
+            Lang target = LOWORD(wparam) == IDM_LANG_ZH ? Lang::Zh : Lang::En;
+            if (target != language()) {
+                setLanguage(target);
+                applyLanguage(hwnd);
+            }
+            return 0;
+        }
         default:
             break;
         }
@@ -1013,12 +1152,14 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
                 if (!result->ok) {
                     g_app.video_frame = -1;
                     g_app.video_view.clear(
-                        wide("Decode failed: " + result->error));
+                        tr(L"Decode failed: ", L"解码失败：") +
+                        wide(result->error));
                 } else {
                     g_app.video_frame = result->frame;
                     std::wstring note;
                     if (result->keyframe_only)
-                        note = L"Keyframe preview (raw stream has no timestamps)";
+                        note = tr(L"Keyframe preview (raw stream has no timestamps)",
+                              L"关键帧预览（裸流不含时间戳）");
                     g_app.video_view.setImage(std::move(result->bgra),
                                               result->width, result->height,
                                               note);

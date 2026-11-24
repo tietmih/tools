@@ -2,6 +2,7 @@
 
 #include <cstdio>
 
+#include "ui/lang.h"
 #include "ui/ui_util.h"
 
 namespace ui {
@@ -9,6 +10,23 @@ namespace ui {
 using namespace bs;
 
 namespace {
+
+const wchar_t *columnName(int index)
+{
+    switch (index) {
+    case 0: return tr(L"#", L"序号");
+    case 1: return tr(L"Type", L"类型");
+    case 2: return L"POC";
+    case 3: return L"QP";
+    case 4: return tr(L"Frame#", L"帧号");
+    case 5: return tr(L"Size", L"大小");
+    case 6: return tr(L"Slices", L"切片数");
+    case 7: return tr(L"NALs", L"NAL 数");
+    case 8: return tr(L"Offset", L"偏移");
+    case 9: return tr(L"Time", L"时间");
+    default: return L"";
+    }
+}
 
 void addColumn(HWND hwnd, int index, const wchar_t *name, int width,
                int format = LVCFMT_LEFT)
@@ -39,12 +57,22 @@ void FrameList::create(HWND parent, HINSTANCE inst, int id)
                    LVS_EX_HEADERDRAGDROP);
     SendMessageW(hwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont()), TRUE);
 
-    int widths[] = {40, 44, 40, 32, 52, 60, 42, 42, 78, 48};
-    const wchar_t *names[] = {L"#",    L"Type", L"POC",  L"QP",    L"Frame#",
-                              L"Size", L"Slices", L"NALs", L"Offset", L"Time"};
+    // Widths are in DPI-scaled units; CJK headers need a little more room than
+    // the ASCII ones, so size for the wider of the two languages.
+    int widths[] = {44, 48, 40, 32, 56, 64, 58, 52, 78, 52};
     for (int i = 0; i < 10; i++)
-        addColumn(hwnd_, i, names[i], px(widths[i]),
+        addColumn(hwnd_, i, columnName(i), px(widths[i]),
                   (i == 0 || i == 1) ? LVCFMT_LEFT : LVCFMT_RIGHT);
+}
+
+void FrameList::updateHeaders()
+{
+    for (int i = 0; i < 10; i++) {
+        LVCOLUMNW col = {};
+        col.mask = LVCF_TEXT;
+        col.pszText = const_cast<wchar_t *>(columnName(i));
+        ListView_SetColumn(hwnd_, i, &col);
+    }
 }
 
 void FrameList::setStream(const Stream *stream)

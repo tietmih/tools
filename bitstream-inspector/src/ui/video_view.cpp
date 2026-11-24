@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "ui/lang.h"
 #include "ui/ui_util.h"
 
 namespace ui {
@@ -25,7 +26,7 @@ void VideoView::create(HWND parent, HINSTANCE inst, int id)
                             WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, parent,
                             reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                             inst, this);
-    message_ = L"Select a frame to decode";
+    message_ = tr(L"Select a frame to decode", L"选择一帧进行解码");
 }
 
 LRESULT CALLBACK VideoView::wndProc(HWND hwnd, UINT msg, WPARAM wparam,
@@ -85,7 +86,8 @@ void VideoView::paintTo(HDC target, const RECT &rc)
         SelectObject(target, uiFont());
         RECT text_rc = rc;
         DrawTextW(target,
-                  message_.empty() ? L"No decoded frame" : message_.c_str(),
+                  message_.empty() ? tr(L"No decoded frame", L"无解码画面")
+                                   : message_.c_str(),
                   -1, &text_rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         return;
     }

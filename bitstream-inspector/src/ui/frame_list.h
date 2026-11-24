@@ -21,6 +21,7 @@ public:
     HWND hwnd() const { return hwnd_; }
     void setStream(const Stream *stream);
     void refresh();
+    void updateHeaders();
     void select(int index, bool ensure_visible);
     int selected() const;
     LRESULT handleNotify(NMHDR *hdr);

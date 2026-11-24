@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string>
 
+#include "ui/lang.h"
 #include "ui/ui_util.h"
 
 namespace ui {
@@ -204,7 +205,7 @@ void HexView::paintTo(HDC target, const RECT &rc)
         SelectObject(dc, uiFont());
         SetTextColor(dc, RGB(120, 120, 120));
         RECT text_rc = rc;
-        DrawTextW(dc, L"No NAL selected", -1, &text_rc,
+        DrawTextW(dc, tr(L"No NAL selected", L"未选择 NAL"), -1, &text_rc,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         BitBlt(target, 0, 0, rc.right, rc.bottom, dc, 0, 0, SRCCOPY);
         SelectObject(dc, old_bitmap);

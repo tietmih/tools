@@ -5,6 +5,7 @@
 #include <cwchar>
 
 #include "ui/frame_list.h"
+#include "ui/lang.h"
 #include "ui/ui_util.h"
 
 namespace ui {
@@ -98,10 +99,26 @@ void ChartView::onClick(HWND hwnd, int x, int y)
 
 void ChartView::paintTo(HDC target, const RECT &rc)
 {
-    HDC dc = CreateCompatibleDC(target);
-    HBITMAP bitmap = CreateCompatibleBitmap(target, std::max(1, (int)rc.right),
-                                            std::max(1, (int)rc.bottom));
-    HGDIOBJ old_bmp = SelectObject(dc, bitmap);
+    // PrintWindow/WM_PRINTCLIENT may hand us a DC without a usable bitmap
+    // (BITSPIXEL == 0). Fall back to drawing directly on the target DC.
+    HDC memdc = CreateCompatibleDC(target);
+    HBITMAP bitmap =
+        memdc ? CreateCompatibleBitmap(target, std::max(1, (int)rc.right),
+                                       std::max(1, (int)rc.bottom))
+              : nullptr;
+    bool buffered = memdc && bitmap;
+    HDC dc = buffered ? memdc : target;
+    HGDIOBJ old_bmp = buffered ? SelectObject(dc, bitmap) : nullptr;
+    if (memdc && !buffered)
+        DeleteDC(memdc);
+    auto finish = [&]() {
+        if (!buffered)
+            return;
+        BitBlt(target, 0, 0, rc.right, rc.bottom, dc, 0, 0, SRCCOPY);
+        SelectObject(dc, old_bmp);
+        DeleteObject(bitmap);
+        DeleteDC(dc);
+    };
     FillRect(dc, &rc, reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
     SetBkMode(dc, TRANSPARENT);
 
@@ -109,12 +126,11 @@ void ChartView::paintTo(HDC target, const RECT &rc)
         SelectObject(dc, uiFont());
         SetTextColor(dc, RGB(130, 130, 130));
         RECT text_rc = rc;
-        DrawTextW(dc, L"Open an H.264/H.265 Annex B elementary stream",
+        DrawTextW(dc,
+                  tr(L"Open an H.264/H.265 Annex B elementary stream",
+                     L"打开 H.264/H.265 码流"),
                   -1, &text_rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        BitBlt(target, 0, 0, rc.right, rc.bottom, dc, 0, 0, SRCCOPY);
-        SelectObject(dc, old_bmp);
-        DeleteObject(bitmap);
-        DeleteDC(dc);
+        finish();
         return;
     }
     const auto &frames = stream_->frames();
@@ -123,9 +139,7 @@ void ChartView::paintTo(HDC target, const RECT &rc)
     int width = plot.right - plot.left;
     int height = plot.bottom - plot.top;
     if (width <= 4 || height <= 4) {
-        SelectObject(dc, old_bmp);
-        DeleteObject(bitmap);
-        DeleteDC(dc);
+        finish();
         return;
     }
 
@@ -218,11 +232,13 @@ void ChartView::paintTo(HDC target, const RECT &rc)
     // Labels.
     SelectObject(dc, uiFont());
     SetTextColor(dc, RGB(100, 100, 100));
-    std::wstring left_label = L"frame size (bytes)    max " +
-                              std::to_wstring(max_size) + L" B";
+    std::wstring left_label =
+        tr(L"frame size (bytes)    max ", L"帧大小（字节）    最大 ") +
+        std::to_wstring(max_size) + tr(L" B", L" 字节");
     TextOutW(dc, plot.left, px(2), left_label.c_str(),
              static_cast<int>(left_label.size()));
-    std::wstring count_label = std::to_wstring(count) + L" frames";
+    std::wstring count_label =
+        std::to_wstring(count) + tr(L" frames", L" 帧");
     SIZE sz = {};
     GetTextExtentPoint32W(dc, count_label.c_str(),
                           static_cast<int>(count_label.size()), &sz);
@@ -237,10 +253,7 @@ void ChartView::paintTo(HDC target, const RECT &rc)
                  static_cast<int>(wcslen(fps_label)));
     }
 
-    BitBlt(target, 0, 0, rc.right, rc.bottom, dc, 0, 0, SRCCOPY);
-    SelectObject(dc, old_bmp);
-    DeleteObject(bitmap);
-    DeleteDC(dc);
+    finish();
 }
 
 LRESULT ChartView::handle(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
