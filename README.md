@@ -1,5 +1,7 @@
 # tools
 
+English | [简体中文](README.zh-CN.md)
+
 Personal open-source toolbox. Small, focused utilities for embedded Linux and
 multimedia work — one directory per project, each with its own build files and
 README.
@@ -34,6 +36,12 @@ Conventions used by every project in this repository:
   verified (versus what was only compiled).
 - Each project is versioned independently; every released version has a tag and
   a matching GitHub Release (see below).
+- Documentation is bilingual: `<name>.md` in English and `<name>.zh-CN.md` in
+  Simplified Chinese, each with a language-switch link at the top. Legal license
+  texts (`LICENSE`, LGPL) stay in their original language.
+- GUI applications provide a runtime English/Simplified-Chinese switch. Syntax
+  terms from the standards (NAL types, SPS/PPS/VPS, slice/PPS/SPS field names,
+  codec and profile names) remain in English in both UI languages.
 
 ## Versioning and releases
 
@@ -46,21 +54,25 @@ Rules:
   metadata and the application About box). Bump it in the same commit as the
   change.
 - **Tag**: annotated tag named `<tool>-v<major>.<minor>.<patch>`, for example
-  `bitstream-inspector-v0.2.0`. Never use a bare version tag that could collide
+  `bitstream-inspector-v0.3.0`. Never use a bare version tag that could collide
   between tools.
 - **Release**: every pushed tag must have a matching GitHub Release with the
   same name. A tag without a release is not a finished release.
 - **Assets**: attach the tool's built packages (Windows installer; optional
   portable archive) plus a `SHA256SUMS` file. Binary artifacts live only in the
-  Release, never in git — `dist/` is ignored.
+  Release, never in git — `dist/` is ignored. Checksums list bare file names so
+  `sha256sum -c SHA256SUMS` works in the download directory.
 - **Notes**: list user-visible changes, verification performed, known
-  limitations and asset SHA-256 values. Keep a per-tool `CHANGELOG.md` and a
-  release note under `docs/releases/`.
+  limitations and asset SHA-256 values, in both English and Simplified Chinese.
+  Keep a per-tool `CHANGELOG.md` / `CHANGELOG.zh-CN.md` and release notes under
+  `docs/releases/` (English and `.zh-CN.md`).
+- **Docs**: every release updates both language versions; a release with only
+  one language is incomplete.
 
 Release checklist for a tool:
 
 ```bash
-# 1. bump the version in the tool, update CHANGELOG.md and docs/releases/
+# 1. bump the version; update CHANGELOG(.zh-CN).md, README(s) and docs/releases/ (both languages)
 # 2. build and verify
 # 3. commit
 # 4. tag and push the commit and tag together
@@ -76,6 +88,12 @@ gh release create <tool>-v<version> \
 
 If `gh` is not available, create the Release from the GitHub web UI and attach
 the same files; the tag and notes must match.
+
+## Current release
+
+| Tool | Version | Tag / Release |
+|---|---|---|
+| bitstream-inspector | 0.3.0 | [`bitstream-inspector-v0.3.0`](https://github.com/tietmih/tools/releases/tag/bitstream-inspector-v0.3.0) |
 
 ## Building
 

@@ -1,5 +1,7 @@
 # third_party
 
+English | [简体中文](README.zh-CN.md)
+
 `ffmpeg-win64/` is where `scripts/build_ffmpeg_mingw.sh` installs a locally
 built FFmpeg 7.1.5 (LGPL, shared libraries). Nothing in this directory is
 checked in except the license text and the build description, so a fresh clone

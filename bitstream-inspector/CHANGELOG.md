@@ -1,8 +1,41 @@
 # Changelog
 
+English | [简体中文](CHANGELOG.zh-CN.md)
+
 All notable changes to Bitstream Inspector. The tool is versioned and released
 independently from the rest of the repository. Tags use the form
 `bitstream-inspector-v<version>`.
+
+## [0.3.0] - 2026-11-24
+
+### Added
+
+- Runtime English/Simplified Chinese UI switch in the Language menu; the choice
+  is persisted in `%APPDATA%\BitstreamInspector\settings.ini`.
+- Bilingual documentation: English and `.zh-CN.md` versions of the README,
+  changelog, screenshot notes and release notes, with language-switch links.
+- Installer language selection (English/Simplified Chinese) and a bilingual
+  license page.
+- Chinese-aware frame-list column widths.
+
+### Changed
+
+- Version bumped to 0.3.0 across CMake, Windows resources, About box and the
+  installer.
+
+### Fixed
+
+- Chart and hex views fall back to direct drawing when PrintWindow or
+  WM_PRINTCLIENT supplies a DC without a compatible bitmap.
+- Installer retries deleting the executable when the application was just
+  closed; release checksum files use bare asset names.
+
+### Verification
+
+- Runtime language switch and persistence across restart verified on Windows.
+- Installer install/launch/uninstall and both UI languages verified.
+- Existing parser/decoder regression suite (ffprobe, trace_headers, PSNR,
+  ASan/UBSan, fuzz) remains clean.
 
 ## [0.2.0] - 2026-11-24
 

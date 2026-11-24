@@ -1,5 +1,7 @@
 # bitstream-inspector
 
+English | [简体中文](README.zh-CN.md)
+
 A Win32 H.264/H.265 bitstream analyzer: frame list, syntax tree, hex view,
 bitrate chart and decoded frame preview in one window.
 
@@ -48,6 +50,9 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
 - **Navigation**: previous/next frame, previous/next keyframe, keyboard
   shortcuts, draggable splitters, layout persisted in
   `%APPDATA%\BitstreamInspector\settings.ini`.
+- **Bilingual UI**: switch between English and Simplified Chinese at runtime
+  from the Language menu. The choice is persisted. Specification terms (NAL
+  types, SPS/PPS/VPS, syntax field names, codec/profile names) stay in English.
 - **Export**: frame list and NAL list as CSV (UTF-8 with BOM).
 
 ## Install on Windows
@@ -55,7 +60,7 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
 Run the installer produced by the packaging step below (the `.exe` is a build
 artifact and is not checked into git):
 ```
-dist/BitstreamInspector-0.2.0-win64-setup.exe
+dist/BitstreamInspector-0.3.0-win64-setup.exe
 ```
 
 The installer is per-user and needs no administrator rights or UAC prompt:
@@ -74,9 +79,10 @@ custom install directory).
 ## Releases
 
 The tool is released independently from the rest of the repository. The current
-version is **0.2.0**; tags use the form `bitstream-inspector-v0.2.0` and every
+version is **0.3.0**; tags use the form `bitstream-inspector-v0.3.0` and every
 tag has a matching GitHub Release with the Windows installer and
-`SHA256SUMS` attached.
+`SHA256SUMS` attached. Release notes are provided in English and Simplified
+Chinese.
 
 See [CHANGELOG.md](CHANGELOG.md) for the change history and
 [docs/releases/](docs/releases/) for the notes attached to each release.
@@ -177,6 +183,7 @@ Checked against independent references, not just "it compiles":
 | ASan + UBSan over all test streams, then 300 mutation-fuzz iterations | no findings |
 | Windows runtime: container open, frame navigation, splitter drag, CSV export, layout persistence | verified by screenshot/automation |
 | Windows installer: silent install → launch installed app → silent uninstall | files, Start Menu/desktop shortcuts, HKCU uninstall entry and clean removal verified |
+| Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |
 
 Not verified: manual feel of every mouse interaction, very large files, exotic
 containers.
