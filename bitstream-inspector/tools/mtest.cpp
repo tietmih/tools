@@ -1,0 +1,100 @@
+// Validation tool for the container demux / decode layer.
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include "core/stream.h"
+#include "media/media_file.h"
+
+using namespace bs;
+
+static bool writePpm(const char *path, const std::vector<uint8_t> &bgra,
+                     int width, int height)
+{
+    FILE *f = std::fopen(path, "wb");
+    if (!f)
+        return false;
+    std::fprintf(f, "P6\n%d %d\n255\n", width, height);
+    std::vector<uint8_t> rgb(static_cast<size_t>(width) * height * 3);
+    for (size_t i = 0, j = 0; i < bgra.size(); i += 4, j += 3) {
+        rgb[j + 0] = bgra[i + 2];
+        rgb[j + 1] = bgra[i + 1];
+        rgb[j + 2] = bgra[i + 0];
+    }
+    std::fwrite(rgb.data(), 1, rgb.size(), f);
+    std::fclose(f);
+    return true;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 2) {
+        std::fprintf(stderr,
+                     "usage: mtest <file> [--frame N] [--ppm out.ppm]\n");
+        return 2;
+    }
+    MediaFile media;
+    std::string error;
+    if (!media.open(argv[1], error)) {
+        std::fprintf(stderr, "open failed: %s\n", error.c_str());
+        return 1;
+    }
+    const ContainerInfo &info = media.info();
+    std::printf("format=%s codec=%s %dx%d fps=%.3f duration=%lldms bitrate=%lld raw=%d\n",
+                info.format.c_str(), info.codec.c_str(), info.width,
+                info.height, info.fps,
+                static_cast<long long>(info.duration_ms),
+                static_cast<long long>(info.bit_rate), info.raw_es ? 1 : 0);
+
+    std::vector<uint8_t> es;
+    if (!media.extractAnnexB(es, error)) {
+        std::fprintf(stderr, "extract failed: %s\n", error.c_str());
+        return 1;
+    }
+    std::printf("es_bytes=%zu packets=%zu\n", es.size(), media.packets().size());
+
+    Stream stream;
+    if (!stream.loadBuffer(std::move(es), error)) {
+        std::fprintf(stderr, "analyze failed: %s\n", error.c_str());
+        return 1;
+    }
+    media.applyTiming(stream);
+    std::printf("%s\n", stream.streamSummary().c_str());
+    size_t n = stream.frames().size();
+    std::printf("frames=%zu\n", n);
+    for (size_t i = 0; i < n && i < 12; i++) {
+        const FrameInfo &f = stream.frames()[i];
+        std::printf("%3zu %-4s poc=%-4d pkt=%-4d pts=%-10lld dts=%-10lld t=%.3fs\n",
+                    i, stream.frameTypeName(f).c_str(), f.poc, f.packet_index,
+                    static_cast<long long>(f.pts),
+                    static_cast<long long>(f.dts), f.time_sec);
+    }
+
+    int frame_index = 0;
+    const char *ppm_path = nullptr;
+    for (int i = 2; i < argc; i++) {
+        if (std::strcmp(argv[i], "--frame") == 0 && i + 1 < argc)
+            frame_index = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--ppm") == 0 && i + 1 < argc)
+            ppm_path = argv[++i];
+    }
+    if (ppm_path) {
+        std::vector<uint8_t> bgra;
+        int w = 0, h = 0;
+        bool keyframe_only = false;
+        if (!media.decodeFrameAt(stream, frame_index, bgra, w, h,
+                                 keyframe_only, error)) {
+            std::fprintf(stderr, "decode failed: %s\n", error.c_str());
+            return 1;
+        }
+        std::printf("decoded frame=%d %dx%d keyframe_only=%d\n", frame_index,
+                    w, h, keyframe_only ? 1 : 0);
+        if (!writePpm(ppm_path, bgra, w, h)) {
+            std::fprintf(stderr, "cannot write %s\n", ppm_path);
+            return 1;
+        }
+        std::printf("wrote %s\n", ppm_path);
+    }
+    return 0;
+}

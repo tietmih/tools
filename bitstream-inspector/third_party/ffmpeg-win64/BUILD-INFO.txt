@@ -1,0 +1,19 @@
+# FFmpeg 7.1.5 (LGPL, shared libraries for Windows x86-64)
+#
+# Built from the official FFmpeg source (n7.1.5), using mingw-w64 GCC and
+# scripts/build_ffmpeg_mingw.sh. Only LGPL-compatible components are enabled:
+# H.264/HEVC decoders, MP4/Matroska/MPEG-TS/raw demuxers, the
+# h264_mp4toannexb / hevc_mp4toannexb bitstream filters and swscale.
+#
+#   --enable-shared --disable-static
+#   --disable-everything
+#   --enable-avformat --enable-avcodec --enable-avutil --enable-swscale
+#   --enable-demuxer=mov,matroska,mpegts,h264,hevc
+#   --enable-decoder=h264,hevc --enable-parser=h264,hevc
+#   --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb
+#   --disable-network --disable-autodetect --disable-zlib --disable-bzlib
+#   --disable-lzma --disable-iconv --disable-sdl2 --disable-xlib
+#
+# Rebuild it with scripts/build_ffmpeg_mingw.sh rather than checking binaries
+# into git. The FFmpeg DLLs are linked dynamically and may be replaced with
+# compatible FFmpeg 7.1 builds. See COPYING.LGPLv2.1 for the license terms.
