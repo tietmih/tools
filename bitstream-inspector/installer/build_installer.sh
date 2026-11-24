@@ -6,13 +6,18 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PROJECT="$ROOT/bitstream-inspector"
 BUILD_DIR=${1:-"$PROJECT/build-win"}
-VERSION=${VERSION:-0.3.0}
+VERSION=${VERSION:-$(sed -n 's/^project(bsinspector VERSION \([0-9][0-9.]*\).*/\1/p' \
+    "$PROJECT/CMakeLists.txt")}
+if [ -z "$VERSION" ]; then
+    echo "error: cannot determine the project version" >&2
+    exit 1
+fi
 STAGE="$PROJECT/installer/staging"
 DIST="$ROOT/dist"
 APP_ICON="$PROJECT/res/app.ico"
 OUT="$DIST/BitstreamInspector-${VERSION}-win64-setup.exe"
 
-required=(bsinspector.exe bsinfo.exe avcodec-61.dll avformat-61.dll avutil-59.dll swscale-8.dll)
+required=(bsinspector.exe bsinfo.exe avcodec-63.dll avformat-63.dll avutil-61.dll swscale-10.dll)
 for f in "${required[@]}"; do
     if [ ! -f "$BUILD_DIR/$f" ]; then
         echo "error: missing $BUILD_DIR/$f" >&2
@@ -39,7 +44,7 @@ fi
 
 rm -rf "$STAGE"
 mkdir -p "$STAGE/LICENSES" "$DIST"
-cp "$BUILD_DIR"/{bsinspector.exe,bsinfo.exe,avcodec-61.dll,avformat-61.dll,avutil-59.dll,swscale-8.dll} "$STAGE/"
+cp "$BUILD_DIR"/{bsinspector.exe,bsinfo.exe,avcodec-63.dll,avformat-63.dll,avutil-61.dll,swscale-10.dll} "$STAGE/"
 cp "$PROJECT/README.md" "$STAGE/README.md"
 cp "$PROJECT/README.zh-CN.md" "$STAGE/README.zh-CN.md"
 cp "$ROOT/LICENSE" "$STAGE/LICENSES/MIT.txt"
@@ -69,6 +74,14 @@ cd "$PROJECT/installer"
     -DSTAGE_DIR="$STAGE" \
     bitstream-inspector.nsi
 
-( cd "$DIST" && sha256sum "$(basename "$OUT")" > SHA256SUMS )
-ls -lh "$OUT" "$DIST/SHA256SUMS"
+PORTABLE="$DIST/BitstreamInspector-${VERSION}-win64-portable.zip"
+if ! command -v zip >/dev/null 2>&1; then
+    echo "error: zip is required for the portable archive" >&2
+    exit 1
+fi
+rm -f "$PORTABLE"
+( cd "$STAGE" && zip -qr "$PORTABLE" . )
+
+( cd "$DIST" && sha256sum "$(basename "$OUT")" "$(basename "$PORTABLE")" > SHA256SUMS )
+ls -lh "$OUT" "$PORTABLE" "$DIST/SHA256SUMS"
 echo "installer ready: $OUT"

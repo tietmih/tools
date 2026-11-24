@@ -8,7 +8,7 @@
 ;   STAGE_DIR    absolute path to the staged files (exe, DLLs, licenses)
 
 !ifndef APP_VERSION
-  !define APP_VERSION "0.3.0"
+  !define APP_VERSION "0.3.1"
 !endif
 !ifndef OUT_FILE
   !define OUT_FILE "..\dist\BitstreamInspector-${APP_VERSION}-win64-setup.exe"
@@ -35,7 +35,7 @@ SetCompressor /SOLID lzma
 SetCompressorDictSize 32
 BrandingText "${APP_NAME} ${APP_VERSION}"
 
-VIProductVersion "0.3.0.0"
+VIProductVersion "${APP_VERSION}.0"
 VIAddVersionKey /LANG=1033 "ProductName" "${APP_NAME}"
 VIAddVersionKey /LANG=1033 "FileDescription" "${APP_NAME} installer"
 VIAddVersionKey /LANG=1033 "FileVersion" "${APP_VERSION}"
@@ -97,10 +97,10 @@ Section "$(SecMainName)" SecMain
 
   SetOutPath "$INSTDIR"
   File "${STAGE_DIR}/bsinspector.exe"
-  File "${STAGE_DIR}/avcodec-61.dll"
-  File "${STAGE_DIR}/avformat-61.dll"
-  File "${STAGE_DIR}/avutil-59.dll"
-  File "${STAGE_DIR}/swscale-8.dll"
+  File "${STAGE_DIR}/avcodec-63.dll"
+  File "${STAGE_DIR}/avformat-63.dll"
+  File "${STAGE_DIR}/avutil-61.dll"
+  File "${STAGE_DIR}/swscale-10.dll"
   File "${STAGE_DIR}/README.md"
   File "${STAGE_DIR}/README.zh-CN.md"
 
@@ -171,10 +171,10 @@ Section "Uninstall"
     Delete "$INSTDIR\bsinspector.exe"
   uninstall_continue:
 
-  Delete "$INSTDIR\avcodec-61.dll"
-  Delete "$INSTDIR\avformat-61.dll"
-  Delete "$INSTDIR\avutil-59.dll"
-  Delete "$INSTDIR\swscale-8.dll"
+  Delete "$INSTDIR\avcodec-63.dll"
+  Delete "$INSTDIR\avformat-63.dll"
+  Delete "$INSTDIR\avutil-61.dll"
+  Delete "$INSTDIR\swscale-10.dll"
   Delete "$INSTDIR\README.md"
   Delete "$INSTDIR\README.zh-CN.md"
   Delete "$INSTDIR\Uninstall.exe"

@@ -1,7 +1,7 @@
-FFmpeg 7.1.5（LGPL，Windows x86-64 共享库）
+FFmpeg 9.1（LGPL，Windows x86-64 共享库）
 ================================================
 
-由官方 FFmpeg 源码（n7.1.5）构建，使用 mingw-w64 GCC 和本项目的
+由官方 FFmpeg 源码（n9.1）构建，使用 mingw-w64 GCC 和本项目的
 scripts/build_ffmpeg_mingw.sh 脚本。仅启用 LGPL 兼容组件：
 
   --enable-shared --disable-static
@@ -14,8 +14,7 @@ scripts/build_ffmpeg_mingw.sh 脚本。仅启用 LGPL 兼容组件：
   --disable-lzma --disable-iconv --disable-sdl2 --disable-xlib
 
 未启用 GPL 或 non-free 组件。FFmpeg DLL 采用动态链接，可替换为兼容的
-FFmpeg 7.1 构建。许可证条款见 COPYING.LGPLv2.1。
+FFmpeg 9.1 构建。许可证条款见 COPYING.LGPLv2.1。
 
-源码：FFmpeg n7.1.5（https://ffmpeg.org/releases/ffmpeg-7.1.tar.gz，
-FFmpeg 仓库的 n7.1.5 tag；本次构建使用了同一源码的 Gitee 镜像）。
-维护者可按要求提供本次构建使用的精确源码压缩包。
+源码：FFmpeg n9.1（https://ffmpeg.org/releases/ffmpeg-9.1.tar.xz，
+FFmpeg 仓库的 n9.1 tag）。

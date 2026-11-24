@@ -6,11 +6,21 @@ set -euo pipefail
 TARBALL=$1
 BUILD_ROOT=$2
 PREFIX=$3
-SRC_DIR="$BUILD_ROOT/ffmpeg-n7.1.5"
+# Resolve before the script changes directory into the source tree.
+case "$BUILD_ROOT" in /*) ;; *) BUILD_ROOT="$PWD/$BUILD_ROOT" ;; esac
+case "$PREFIX" in /*) ;; *) PREFIX="$PWD/$PREFIX" ;; esac
 
 mkdir -p "$BUILD_ROOT" "$PREFIX"
+# Accept the upstream tarball (ffmpeg-7.1.5/) and mirror tarballs
+# (ffmpeg-n7.1.5/): derive the source directory from the archive itself.
+TOP=$( { tar -tf "$TARBALL" || true; } | head -n 1 | cut -d/ -f1 )
+if [ -z "$TOP" ]; then
+    echo "error: cannot list $TARBALL" >&2
+    exit 1
+fi
+SRC_DIR="$BUILD_ROOT/$TOP"
 if [ ! -d "$SRC_DIR" ]; then
-    tar -xzf "$TARBALL" -C "$BUILD_ROOT"
+    tar -xf "$TARBALL" -C "$BUILD_ROOT"
 fi
 
 cd "$SRC_DIR"
@@ -32,7 +42,8 @@ if [ ! -f ffbuild/config.mak ]; then
         --disable-network --disable-autodetect \
         --disable-iconv --disable-zlib --disable-bzlib --disable-lzma \
         --disable-sdl2 --disable-xlib \
-        --extra-cflags="-O2"
+        --extra-cflags="-O2" \
+        --extra-ldflags="-static-libgcc"
 fi
 make -j"$(nproc)"
 make install

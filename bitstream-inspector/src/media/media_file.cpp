@@ -682,19 +682,21 @@ bool MediaFile::decodePacket(int packet_index, std::vector<uint8_t> &bgra,
             seen_frames++;
         }
         bool match = false;
+#if LIBAVUTIL_VERSION_MAJOR < 60
+        // pkt_pos was removed in FFmpeg 8; PTS/DTS matching below still works.
         if (f->pkt_pos >= 0 && target.pos >= 0 &&
             f->pkt_pos == target.pos)
             match = true;
+#endif
         if (!match && target.has_pts)
             match = fts == target.pts;
         else if (!match && target.has_dts)
             match = fdts == target.dts;
         if (std::getenv("BS_MEDIA_DEBUG") && match)
             std::fprintf(stderr,
-                         "MATCH fts=%lld fdts=%lld pkt_pos=%lld target_pos=%lld\n",
+                         "MATCH fts=%lld fdts=%lld target_pos=%lld\n",
                          static_cast<long long>(fts),
                          static_cast<long long>(fdts),
-                         static_cast<long long>(f->pkt_pos),
                          static_cast<long long>(target.pos));
         if (!match)
             return false;
