@@ -16,7 +16,11 @@ README.
 
 ```
 .
+├── .github/workflows/       # GitHub Actions CI and release workflows
+├── scripts/                 # repository-wide CI helpers (docs pairing, release notes)
 ├── bitstream-inspector/     # one project per directory
+│   ├── ci/                  # build/test scripts the workflows call
+│   ├── tests/               # unit tests and FFmpeg-referenced regression suite
 │   ├── src/core/            # portable C++17 bitstream parsing (no Qt, no Win32)
 │   ├── src/media/           # optional FFmpeg demux/decode layer
 │   ├── src/ui/              # Win32 GUI
@@ -42,6 +46,46 @@ Conventions used by every project in this repository:
 - GUI applications provide a runtime English/Simplified-Chinese switch. Syntax
   terms from the standards (NAL types, SPS/PPS/VPS, slice/PPS/SPS field names,
   codec and profile names) remain in English in both UI languages.
+
+## Continuous integration
+
+GitHub Actions is the release path for every tool:
+
+| Workflow | Trigger | What it runs |
+|---|---|---|
+| `ci.yml` | every push/PR | discovers tools from `.github/tools.json`; Linux x64 and arm64 regression tests, ASan/UBSan and mutation fuzz, Windows cross-build plus installer and portable ZIP, native Windows GUI/installer smoke test, MSVC build, coverage, and repository checks (bilingual docs, links, versions, shellcheck, actionlint, Python syntax) |
+| `release.yml` | tag `<tool>-v*`, or manual dispatch | the same tests, version/notes checks, then publishes the GitHub Release; manual dispatch accepts `publish: false` for a dry run |
+| `dependency-check.yml` | weekly, or manual dispatch | compares pinned dependencies with upstream releases, opens a tracking issue, reports the runner toolchain |
+
+- Pushing a `<tool>-v<version>` tag publishes the release automatically. Do not
+  create releases by hand unless Actions is unavailable.
+- CI must be green before tagging. The tag version must match the tool's
+  `CMakeLists.txt`, and the release notes must exist in both languages.
+- Tool-specific steps live in `<tool>/ci/` (`linux.sh`, `windows.sh`,
+  `check-version.sh`, `windows-smoke.ps1`, `msvc.ps1`, `coverage.sh`, optional
+  `ffmpeg.sh`/`ffmpeg-host.sh`) so the same commands run locally and in CI.
+  Adding a tool means adding those scripts and an entry in
+  `.github/tools.json`; no workflow edit is required.
+- The Windows build compiles a pinned LGPL FFmpeg from the upstream tarball
+  (SHA-256 verified) and caches it between runs.
+
+## Dependencies
+
+Third-party versions are pinned and tracked:
+
+- `bitstream-inspector/ci/deps.env` holds the bundled FFmpeg version and its
+  SHA-256; `ci/ffmpeg.sh` verifies the tarball before building. The Linux test
+  job builds the same version from the tarball (`ci/ffmpeg-host.sh`, cached),
+  so the tests and the shipped DLLs use one FFmpeg release.
+- `dependency-check.yml` runs weekly, compares the pin with upstream stable
+  releases, and opens or updates a **Dependency updates available** issue with
+  an upgrade checklist when FFmpeg is behind. It also reports the
+  runner-provided toolchain (NSIS, mingw-w64, nasm, CMake).
+- Dependabot keeps the GitHub Actions versions current.
+- Runner-provided tools follow the pinned `ubuntu-24.04` image; changing them
+  means changing the image or their installation step.
+- Upgrades are deliberate: update the pin, DLL names, `BUILD-INFO` and docs,
+  run the full local suite, then release through the normal tag flow.
 
 ## Versioning and releases
 
@@ -72,28 +116,37 @@ Rules:
 Release checklist for a tool:
 
 ```bash
+# 0. check open "Dependency updates available" issues; upgrade dependencies
+#    in a dedicated change, not inside the release commit
 # 1. bump the version; update CHANGELOG(.zh-CN).md, README(s) and docs/releases/ (both languages)
-# 2. build and verify
-# 3. commit
-# 4. tag and push the commit and tag together
-git tag -a <tool>-v<version> -m "<Tool> <version>"
-git push origin main <tool>-v<version>
+# 2. run the tool's CI scripts locally
+bash bitstream-inspector/ci/ffmpeg-host.sh  # once: host FFmpeg for tests
+bash bitstream-inspector/ci/linux.sh release
+bash bitstream-inspector/ci/linux.sh asan
+bash bitstream-inspector/ci/ffmpeg.sh       # once: Windows LGPL FFmpeg
+bash bitstream-inspector/ci/windows.sh
+# 3. commit and push main
+git push origin main
 
-# 5. create the release with assets (requires GitHub authentication)
-gh release create <tool>-v<version> \
-  dist/<asset> dist/SHA256SUMS \
-  --title "<Tool> <version>" \
-  --notes-file bitstream-inspector/docs/releases/v<version>.md
+# 4. push an annotated tag; the release workflow tests, builds and publishes
+git tag -a <tool>-v<version> -m "<Tool> <version>"
+git push origin <tool>-v<version>
+
+# 5. verify the workflow run and the published assets
+gh run list --workflow release.yml --limit 1
 ```
 
-If `gh` is not available, create the Release from the GitHub web UI and attach
-the same files; the tag and notes must match.
+The release workflow fails if the tag version does not match the source, if
+either language of the release notes is missing, or if any test job fails. If
+Actions is unavailable, the manual fallback is `gh release create` with the
+installer and `SHA256SUMS` from `dist/` and the same notes file; the tag and
+notes must match.
 
 ## Current release
 
 | Tool | Version | Tag / Release |
 |---|---|---|
-| bitstream-inspector | 0.3.0 | [`bitstream-inspector-v0.3.0`](https://github.com/tietmih/tools/releases/tag/bitstream-inspector-v0.3.0) |
+| bitstream-inspector | 0.3.1 | [`bitstream-inspector-v0.3.1`](https://github.com/tietmih/tools/releases/tag/bitstream-inspector-v0.3.1) |
 
 ## Building
 

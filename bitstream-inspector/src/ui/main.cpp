@@ -1091,12 +1091,12 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         case IDM_HELP_ABOUT:
             MessageBoxW(
                 hwnd,
-                tr(L"Bitstream Inspector 0.3.0\n\n"
+                tr(L"Bitstream Inspector 0.3.1\n\n"
                    L"Annex B and container H.264/H.265 analyzer.\n"
                    L"Independent implementation based on the published "
                    L"ITU-T H.264 and H.265 syntax specifications.\n\n"
                    L"Not affiliated with Elecard or any commercial product.",
-                   L"码流分析器 0.3.0\n\n"
+                   L"码流分析器 0.3.1\n\n"
                    L"支持 Annex B 裸流与容器封装的 H.264/H.265 分析。\n"
                    L"基于公开的 ITU-T H.264/H.265 语法规范独立实现。\n\n"
                    L"与 Elecard 或任何商业产品无关联。"),

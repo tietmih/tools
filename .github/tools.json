@@ -1,0 +1,13 @@
+{
+  "tools": [
+    {
+      "name": "bitstream-inspector",
+      "linux": true,
+      "windows": true,
+      "runtime": true,
+      "msvc": true,
+      "arm64": true,
+      "coverage": true
+    }
+  ]
+}

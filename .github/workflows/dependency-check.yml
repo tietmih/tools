@@ -1,0 +1,66 @@
+name: dependency check
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: dependency-check
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Toolchain versions
+        run: |
+          {
+            ffmpeg -version | head -1
+            cmake --version | head -1
+            apt-cache policy nsis | sed -n '1,3p'
+          } || true
+      - name: Check upstream releases
+        id: check
+        run: |
+          python3 scripts/check_dependencies.py \
+            --output "$RUNNER_TEMP/dependency-report.md" \
+            --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: dependency-report
+          path: ${{ runner.temp }}/dependency-report.md
+          retention-days: 30
+      - name: Open or update the tracking issue
+        if: steps.check.outputs.update_available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Dependency updates available"
+          existing=$(gh issue list --state open --search "in:title \"$title\"" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" \
+              --body-file "$RUNNER_TEMP/dependency-report.md"
+          else
+            gh issue create --title "$title" \
+              --body-file "$RUNNER_TEMP/dependency-report.md"
+          fi
+      - name: Close the tracking issue when current
+        if: steps.check.outputs.update_available != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Dependency updates available"
+          existing=$(gh issue list --state open --search "in:title \"$title\"" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" \
+              --comment "All pinned dependencies are current."
+          fi

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Build with coverage instrumentation, run the regression suite and produce
+# coverage.xml / HTML for the CI artifact.
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+BUILD="$ROOT/build-ci-coverage"
+VECTORS=${BS_TEST_VECTORS:-$ROOT/build-deps/vectors}
+OUT="$ROOT/build-deps/coverage"
+CMAKE=${CMAKE:-cmake}
+JOBS=${JOBS:-$(nproc)}
+export BS_TEST_VECTORS="$VECTORS"
+
+HOST_FFMPEG="$ROOT/build-deps/ffmpeg-host"
+if [ -f "$HOST_FFMPEG/include/libavformat/avformat.h" ]; then
+    export CMAKE_PREFIX_PATH="$HOST_FFMPEG${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+    export LD_LIBRARY_PATH="$HOST_FFMPEG/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+"$CMAKE" -S "$ROOT" -B "$BUILD" -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_CXX_FLAGS="--coverage -O0 -g" \
+    -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+"$CMAKE" --build "$BUILD" --parallel "$JOBS"
+( cd "$BUILD" && ctest --output-on-failure )
+
+if [ ! -f "$VECTORS/manifest.json" ]; then
+    python3 "$ROOT/tests/gen_vectors.py" --out "$VECTORS"
+fi
+FFMPEG=${FFMPEG:-ffmpeg}
+FFPROBE=${FFPROBE:-ffprobe}
+REF_FFMPEG=${REF_FFMPEG:-$FFMPEG}
+if [ -x "$HOST_FFMPEG/bin/ffmpeg" ] && [ -x "$HOST_FFMPEG/bin/ffprobe" ]; then
+    REF_FFMPEG="$HOST_FFMPEG/bin/ffmpeg"
+    FFPROBE="$HOST_FFMPEG/bin/ffprobe"
+fi
+python3 "$ROOT/tests/check_parse.py" --bsinfo "$BUILD/bsinfo" \
+    --ffprobe "$FFPROBE" --vectors "$VECTORS"
+python3 "$ROOT/tests/check_headers.py" --bsinfo "$BUILD/bsinfo" \
+    --ffmpeg "$REF_FFMPEG" --vectors "$VECTORS"
+if [ -x "$BUILD/mtest" ]; then
+    python3 "$ROOT/tests/check_decode.py" --mtest "$BUILD/mtest" \
+        --ffmpeg "$REF_FFMPEG" --ffprobe "$FFPROBE" --vectors "$VECTORS"
+fi
+
+if ! command -v gcovr >/dev/null 2>&1; then
+    echo "error: gcovr is required for the coverage report" >&2
+    exit 1
+fi
+mkdir -p "$OUT"
+gcovr --root "$ROOT" --filter "$ROOT/src" --object-directory "$BUILD" \
+    --xml-pretty --output "$OUT/coverage.xml" \
+    --html-details "$OUT/index.html"
+echo "coverage report: $OUT/index.html"

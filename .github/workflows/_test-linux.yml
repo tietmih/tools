@@ -1,0 +1,89 @@
+name: linux tests
+
+on:
+  workflow_call:
+    inputs:
+      tool:
+        type: string
+        required: true
+      runner:
+        type: string
+        required: false
+        default: ubuntu-24.04
+      ref:
+        type: string
+        required: false
+        default: ""
+      artifact_suffix:
+        type: string
+        required: false
+        default: x64
+      upload_vectors:
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ inputs.tool }} / linux ${{ inputs.artifact_suffix }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 45
+    env:
+      CCACHE_MAXSIZE: 500M
+      CCACHE_COMPRESS: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg ccache
+      - name: Restore host FFmpeg
+        id: host-ffmpeg
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ inputs.tool }}/build-deps/ffmpeg-host
+          key: ffmpeg-host-${{ runner.arch }}-${{ inputs.tool }}-${{ hashFiles(format('{0}/ci/deps.env', inputs.tool), format('{0}/ci/ffmpeg-host.sh', inputs.tool), format('{0}/scripts/build_ffmpeg_host.sh', inputs.tool)) }}
+      - name: Verify host FFmpeg
+        id: host-check
+        run: |
+          prefix="${{ inputs.tool }}/build-deps/ffmpeg-host"
+          if [ -f "$prefix/include/libavformat/avformat.h" ] &&
+             ls "$prefix"/lib/libavformat.so* >/dev/null 2>&1 &&
+             [ -x "$prefix/bin/ffmpeg" ] && [ -x "$prefix/bin/ffprobe" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build host FFmpeg
+        if: steps.host-ffmpeg.outputs.cache-hit != 'true' || steps.host-check.outputs.ok != 'true'
+        run: bash "${{ inputs.tool }}/ci/ffmpeg-host.sh"
+      - name: Restore ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tool }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tool }}-
+      - name: Release build and regression tests
+        run: bash "${{ inputs.tool }}/ci/linux.sh" release
+      - name: Sanitizer build and fuzz
+        env:
+          BS_FUZZ_ITERATIONS: "200"
+        run: bash "${{ inputs.tool }}/ci/linux.sh" asan
+      - name: Upload test vectors
+        if: inputs.upload_vectors
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ inputs.tool }}-vectors-${{ inputs.artifact_suffix }}
+          path: |
+            ${{ inputs.tool }}/build-deps/vectors/manifest.json
+            ${{ inputs.tool }}/build-deps/vectors/*.h264
+            ${{ inputs.tool }}/build-deps/vectors/*.h265
+            ${{ inputs.tool }}/build-deps/vectors/*.mp4
+            ${{ inputs.tool }}/build-deps/vectors/*.ts
+            ${{ inputs.tool }}/build-deps/vectors/*.mkv
+          if-no-files-found: error

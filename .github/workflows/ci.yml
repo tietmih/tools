@@ -1,0 +1,208 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    name: discover tools
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      linux: ${{ steps.list.outputs.linux }}
+      arm64: ${{ steps.list.outputs.arm64 }}
+      windows: ${{ steps.list.outputs.windows }}
+      runtime: ${{ steps.list.outputs.runtime }}
+      msvc: ${{ steps.list.outputs.msvc }}
+      coverage: ${{ steps.list.outputs.coverage }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - id: list
+        run: |
+          jq -c '[.tools[] | select(.linux)]' .github/tools.json > "$RUNNER_TEMP/linux.json"
+          jq -c '[.tools[] | select(.arm64)]' .github/tools.json > "$RUNNER_TEMP/arm64.json"
+          jq -c '[.tools[] | select(.windows)]' .github/tools.json > "$RUNNER_TEMP/windows.json"
+          jq -c '[.tools[] | select(.runtime)]' .github/tools.json > "$RUNNER_TEMP/runtime.json"
+          jq -c '[.tools[] | select(.msvc)]' .github/tools.json > "$RUNNER_TEMP/msvc.json"
+          jq -c '[.tools[] | select(.coverage)]' .github/tools.json > "$RUNNER_TEMP/coverage.json"
+          for name in linux arm64 windows runtime msvc coverage; do
+            echo "$name=$(cat "$RUNNER_TEMP/$name.json")" >> "$GITHUB_OUTPUT"
+          done
+
+  repo-checks:
+    name: repository checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install linters
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tgz" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tgz" |
+            sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+      - name: Bilingual documentation
+        run: python3 scripts/check_bilingual.py
+      - name: Documentation links
+        run: python3 scripts/check_links.py
+      - name: Version consistency
+        run: |
+          while IFS= read -r tool; do
+            if [ -x "$tool/ci/check-version.sh" ]; then
+              bash "$tool/ci/check-version.sh"
+            fi
+          done < <(jq -r '.tools[].name' .github/tools.json)
+      - name: Shell scripts
+        run: |
+          mapfile -t scripts < <(git ls-files '*.sh')
+          if [ ${#scripts[@]} -gt 0 ]; then
+            shellcheck "${scripts[@]}"
+          fi
+      - name: Python syntax
+        run: |
+          mapfile -t files < <(git ls-files '*.py')
+          if [ ${#files[@]} -gt 0 ]; then
+            python3 -m py_compile "${files[@]}"
+          fi
+      - name: GitHub Actions syntax
+        run: |
+          # shellcheck disable=SC2086
+          "$RUNNER_TEMP/actionlint"
+
+  linux:
+    name: ${{ matrix.name }} / linux x64
+    needs: discover
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.linux) }}
+    uses: ./.github/workflows/_test-linux.yml
+    with:
+      tool: ${{ matrix.name }}
+      runner: ubuntu-24.04
+      artifact_suffix: x64
+      upload_vectors: true
+
+  arm64:
+    name: ${{ matrix.name }} / linux arm64
+    needs: discover
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.arm64) }}
+    uses: ./.github/workflows/_test-linux.yml
+    with:
+      tool: ${{ matrix.name }}
+      runner: ubuntu-24.04-arm
+      artifact_suffix: arm64
+      upload_vectors: false
+
+  windows:
+    name: ${{ matrix.name }} / windows
+    needs: discover
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.windows) }}
+    uses: ./.github/workflows/_build-windows.yml
+    with:
+      tool: ${{ matrix.name }}
+
+  windows-runtime:
+    name: ${{ matrix.name }} / windows runtime
+    needs: [discover, linux, windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.runtime) }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ${{ matrix.name }}-windows
+          path: payload
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ${{ matrix.name }}-vectors-x64
+          path: vectors
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ${{ matrix.name }}-installer
+          path: installer
+      - name: Native Windows smoke test
+        shell: pwsh
+        run: |
+          ./${{ matrix.name }}/ci/windows-smoke.ps1 `
+            -Payload "$env:GITHUB_WORKSPACE\payload" `
+            -Vectors "$env:GITHUB_WORKSPACE\vectors" `
+            -Installer "$env:GITHUB_WORKSPACE\installer"
+
+  msvc:
+    name: ${{ matrix.name }} / msvc
+    needs: discover
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.msvc) }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build with MSVC and run unit tests
+        shell: pwsh
+        run: ./${{ matrix.name }}/ci/msvc.ps1
+
+  coverage:
+    name: ${{ matrix.name }} / coverage
+    needs: discover
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.coverage) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg gcovr
+      - name: Restore host FFmpeg
+        id: host-ffmpeg
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ matrix.name }}/build-deps/ffmpeg-host
+          key: ffmpeg-host-${{ runner.arch }}-${{ matrix.name }}-${{ hashFiles(format('{0}/ci/deps.env', matrix.name), format('{0}/ci/ffmpeg-host.sh', matrix.name), format('{0}/scripts/build_ffmpeg_host.sh', matrix.name)) }}
+      - name: Verify host FFmpeg
+        id: host-check
+        run: |
+          prefix="${{ matrix.name }}/build-deps/ffmpeg-host"
+          if [ -f "$prefix/include/libavformat/avformat.h" ] &&
+             ls "$prefix"/lib/libavformat.so* >/dev/null 2>&1 &&
+             [ -x "$prefix/bin/ffmpeg" ] && [ -x "$prefix/bin/ffprobe" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build host FFmpeg
+        if: steps.host-ffmpeg.outputs.cache-hit != 'true' || steps.host-check.outputs.ok != 'true'
+        run: bash "${{ matrix.name }}/ci/ffmpeg-host.sh"
+      - name: Collect coverage
+        run: bash "${{ matrix.name }}/ci/coverage.sh"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ matrix.name }}-coverage
+          path: ${{ matrix.name }}/build-deps/coverage
+          if-no-files-found: error

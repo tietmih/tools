@@ -1,0 +1,96 @@
+name: windows package
+
+on:
+  workflow_call:
+    inputs:
+      tool:
+        type: string
+        required: true
+      ref:
+        type: string
+        required: false
+        default: ""
+      version:
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ inputs.tool }} / windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CCACHE_MAXSIZE: 500M
+      CCACHE_COMPRESS: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++-mingw-w64-x86-64 gcc-mingw-w64-x86-64 nasm nsis zip ccache
+      - name: Locate FFmpeg build hook
+        id: ffmpeg
+        run: |
+          if [ -f "${{ inputs.tool }}/ci/ffmpeg.sh" ]; then
+            key=$(sha256sum "${{ inputs.tool }}/ci/ffmpeg.sh" \
+                  "${{ inputs.tool }}/ci/deps.env" \
+                  "${{ inputs.tool }}/scripts/build_ffmpeg_mingw.sh" 2>/dev/null |
+                  sha256sum | cut -d' ' -f1)
+            echo "key=$key" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Restore FFmpeg build
+        id: ffmpeg-cache
+        if: steps.ffmpeg.outputs.key != ''
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ inputs.tool }}/third_party/ffmpeg-win64
+          key: ffmpeg-${{ inputs.tool }}-${{ steps.ffmpeg.outputs.key }}
+      - name: Verify restored FFmpeg
+        id: ffmpeg-check
+        if: steps.ffmpeg.outputs.key != ''
+        run: |
+          prefix="${{ inputs.tool }}/third_party/ffmpeg-win64"
+          if [ -f "$prefix/include/libavformat/avformat.h" ] &&
+             ls "$prefix"/lib/libavformat.dll.a >/dev/null 2>&1 &&
+             ls "$prefix"/bin/avformat-*.dll >/dev/null 2>&1; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build FFmpeg
+        if: steps.ffmpeg.outputs.key != '' && steps.ffmpeg-check.outputs.ok != 'true'
+        run: bash "${{ inputs.tool }}/ci/ffmpeg.sh"
+      - name: Restore ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/ccache
+          key: ccache-windows-${{ inputs.tool }}-${{ github.sha }}
+          restore-keys: |
+            ccache-windows-${{ inputs.tool }}-
+      - name: Build GUI, CLI and installer
+        run: bash "${{ inputs.tool }}/ci/windows.sh" "${{ inputs.version }}"
+      - name: Verify package checksums
+        run: (cd dist && sha256sum -c SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ inputs.tool }}-windows
+          path: |
+            ${{ inputs.tool }}/build-win/bsinspector.exe
+            ${{ inputs.tool }}/build-win/bsinfo.exe
+            ${{ inputs.tool }}/build-win/mtest.exe
+            ${{ inputs.tool }}/build-win/*.dll
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ inputs.tool }}-installer
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error

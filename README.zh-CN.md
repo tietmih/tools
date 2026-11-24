@@ -15,7 +15,11 @@
 
 ```
 .
+├── .github/workflows/       # GitHub Actions CI 与发布工作流
+├── scripts/                 # 仓库级 CI 辅助脚本（文档配对、发布说明）
 ├── bitstream-inspector/     # 每个工具一个目录
+│   ├── ci/                  # 工作流调用的构建/测试脚本
+│   ├── tests/               # 单元测试与以 FFmpeg 为参考的回归套件
 │   ├── src/core/            # 可移植 C++17 码流解析（不依赖 Qt/Win32）
 │   ├── src/media/           # 可选 FFmpeg 解封装/解码层
 │   ├── src/ui/              # Win32 图形界面
@@ -37,6 +41,43 @@
   链接。法律许可证原文（`LICENSE`、LGPL）保持原语言。
 - 图形界面支持运行时英文/简体中文切换。标准中的语法术语（NAL 类型、SPS/PPS/VPS、
   slice/PPS/SPS 字段名、编码与 profile 名称）在两种界面语言下都保持英文。
+
+## 持续集成
+
+所有工具都用 GitHub Actions 完成构建、测试和发布：
+
+| 工作流 | 触发条件 | 内容 |
+|---|---|---|
+| `ci.yml` | 每次推送/PR | 从 `.github/tools.json` 自动发现工具；Linux x64/arm64 回归、ASan/UBSan 与变异 fuzz、Windows 交叉构建与安装包/便携 ZIP、原生 Windows GUI/安装器冒烟、MSVC 构建、覆盖率，以及仓库检查（双语文档、链接、版本、shellcheck、actionlint、Python 语法） |
+| `release.yml` | tag `<tool>-v*` 或手动触发 | 同样的测试、版本与发布说明校验，然后发布 GitHub Release；手动触发可传 `publish: false` 做 dry-run |
+| `dependency-check.yml` | 每周或手动触发 | 比较固定依赖与上游版本，创建跟踪 issue，报告 runner 工具链 |
+
+- 推送 `<tool>-v<version>` tag 会自动发布；除非 Actions 不可用，否则不要手工创建
+  Release。
+- 打 tag 前 CI 必须全绿。tag 版本必须与工具的 `CMakeLists.txt` 一致，发布说明必须
+  两种语言都存在。
+- 工具自己的步骤放在 `<tool>/ci/`（`linux.sh`、`windows.sh`、`check-version.sh`、
+  `windows-smoke.ps1`、`msvc.ps1`、`coverage.sh`，可选的 `ffmpeg.sh`/
+  `ffmpeg-host.sh`），本地执行与 CI 完全相同的命令。新增工具时添加这些脚本并在
+  `.github/tools.json` 中登记即可，无需改 workflow。
+- Windows 构建会从上游源码包编译固定版本的 LGPL FFmpeg（校验 SHA-256），并在
+  多次运行之间缓存。
+
+## 依赖
+
+第三方版本统一固定并跟踪：
+
+- `bitstream-inspector/ci/deps.env` 记录内置 FFmpeg 的版本和 SHA-256；
+  `ci/ffmpeg.sh` 在构建前校验源码包。Linux 测试任务用同一份源码包构建相同版本
+  （`ci/ffmpeg-host.sh`，走缓存），保证测试与出货 DLL 使用同一个 FFmpeg 版本。
+- `dependency-check.yml` 每周运行一次，比较固定版本与上游稳定版；FFmpeg 落后时
+  创建或更新 **Dependency updates available** issue，并附升级检查清单。同时报告
+  runner 提供的工具链版本（NSIS、mingw-w64、nasm、CMake）。
+- Dependabot 负责保持 GitHub Actions 版本最新。
+- runner 提供的工具跟随固定的 `ubuntu-24.04` 镜像；升级意味着更换镜像或修改安装
+  步骤。
+- 升级要单独提交：更新 pin、DLL 名称、`BUILD-INFO` 和文档，跑完整本地测试，再走
+  正常 tag 发布流程。
 
 ## 版本与发布
 
@@ -62,27 +103,35 @@
 发布检查清单：
 
 ```bash
+# 0. 检查未关闭的 "Dependency updates available" issue；依赖升级放在独立提交，
+#    不要混进发布提交
 # 1. 更新版本号；同时更新 CHANGELOG(.zh-CN).md、README（两种语言）和 docs/releases/
-# 2. 构建并验证
-# 3. 提交
-# 4. 同时推送提交和 tag
-git tag -a <tool>-v<version> -m "<Tool> <version>"
-git push origin main <tool>-v<version>
+# 2. 在本地运行该工具的 CI 脚本
+bash bitstream-inspector/ci/ffmpeg-host.sh  # 首次：测试用 host FFmpeg
+bash bitstream-inspector/ci/linux.sh release
+bash bitstream-inspector/ci/linux.sh asan
+bash bitstream-inspector/ci/ffmpeg.sh       # 首次：Windows LGPL FFmpeg
+bash bitstream-inspector/ci/windows.sh
+# 3. 提交并推送 main
+git push origin main
 
-# 5. 创建 Release 并上传附件（需要 GitHub 认证）
-gh release create <tool>-v<version> \
-  dist/<asset> dist/SHA256SUMS \
-  --title "<Tool> <version>" \
-  --notes-file bitstream-inspector/docs/releases/v<version>.md
+# 4. 推送附注 tag；发布工作流会运行测试、构建并发布
+git tag -a <tool>-v<version> -m "<Tool> <version>"
+git push origin <tool>-v<version>
+
+# 5. 检查工作流运行结果和已发布的附件
+gh run list --workflow release.yml --limit 1
 ```
 
-没有 `gh` 时，从 GitHub 网页创建 Release 并上传同样的附件；tag 和发布说明必须一致。
+如果 tag 版本与源码不一致、缺少任一语言的发布说明，或任何测试任务失败，发布
+工作流会失败。Actions 不可用时的后备方案是手工执行 `gh release create`，使用
+`dist/` 中的安装包和 `SHA256SUMS` 以及同一份发布说明；tag 与说明必须一致。
 
 ## 当前发布
 
 | 工具 | 版本 | Tag / Release |
 |---|---|---|
-| bitstream-inspector | 0.3.0 | [`bitstream-inspector-v0.3.0`](https://github.com/tietmih/tools/releases/tag/bitstream-inspector-v0.3.0) |
+| bitstream-inspector | 0.3.1 | [`bitstream-inspector-v0.3.1`](https://github.com/tietmih/tools/releases/tag/bitstream-inspector-v0.3.1) |
 
 ## 构建
 

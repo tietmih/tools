@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+[![CI](https://github.com/tietmih/tools/actions/workflows/ci.yml/badge.svg)](https://github.com/tietmih/tools/actions/workflows/ci.yml)
+
 A Win32 H.264/H.265 bitstream analyzer: frame list, syntax tree, hex view,
 bitrate chart and decoded frame preview in one window.
 
@@ -57,10 +59,13 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
 
 ## Install on Windows
 
-Run the installer produced by the packaging step below (the `.exe` is a build
-artifact and is not checked into git):
+Download the installer (or the portable ZIP) from the
+[latest release](https://github.com/tietmih/tools/releases/latest), or run the
+packaging step below (the binaries are build artifacts and are not checked into
+git):
 ```
-dist/BitstreamInspector-0.3.0-win64-setup.exe
+dist/BitstreamInspector-0.3.1-win64-setup.exe
+dist/BitstreamInspector-0.3.1-win64-portable.zip
 ```
 
 The installer is per-user and needs no administrator rights or UAC prompt:
@@ -79,10 +84,10 @@ custom install directory).
 ## Releases
 
 The tool is released independently from the rest of the repository. The current
-version is **0.3.0**; tags use the form `bitstream-inspector-v0.3.0` and every
-tag has a matching GitHub Release with the Windows installer and
-`SHA256SUMS` attached. Release notes are provided in English and Simplified
-Chinese.
+version is **0.3.1**; tags use the form `bitstream-inspector-v0.3.1` and every
+tag has a matching GitHub Release with the Windows installer, portable ZIP and
+`SHA256SUMS` attached. Releases are built, tested and published by the CI
+workflow. Release notes are provided in English and Simplified Chinese.
 
 See [CHANGELOG.md](CHANGELOG.md) for the change history and
 [docs/releases/](docs/releases/) for the notes attached to each release.
@@ -91,9 +96,14 @@ See [CHANGELOG.md](CHANGELOG.md) for the change history and
 
 - Windows 10/11 x86-64 for the GUI.
 - To build from Linux: `g++-mingw-w64-x86-64` (GCC 13 or newer) and CMake 3.16+.
-- Optional media layer: FFmpeg 7.1 shared libraries (LGPL build, H.264/HEVC
-  decoders, MP4/TS/MKV demuxers). Without them the GUI still builds and works,
-  but container input and the video tab are disabled.
+- Optional media layer: the Windows build uses the bundled FFmpeg 9.1 shared
+  libraries (LGPL, H.264/HEVC decoders, MP4/TS/MKV demuxers). On Linux the
+  media layer is enabled when the system FFmpeg development packages
+  (`libavformat-dev`, `libavcodec-dev`, `libavutil-dev`, `libswscale-dev`) are
+  installed. Without FFmpeg the GUI still builds and works, but container input
+  and the video tab are disabled. The bundled version and its SHA-256 are
+  pinned in [ci/deps.env](ci/deps.env); the repository README describes the
+  weekly dependency check and upgrade policy.
 
 ## Build
 
@@ -101,7 +111,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the change history and
 
 ```bash
 # 1. Build the optional FFmpeg layer once (see scripts/build_ffmpeg_mingw.sh)
-bash scripts/build_ffmpeg_mingw.sh /path/to/ffmpeg-n7.1.5.tar.gz \
+bash scripts/build_ffmpeg_mingw.sh /path/to/ffmpeg-9.1.tar.xz \
      /tmp/ffmpeg-build "$PWD/third_party/ffmpeg-win64"
 
 # 2. Configure and build
@@ -114,7 +124,7 @@ cmake --build build-win -j
 ```
 
 `build-win/bsinspector.exe` is the GUI. When the FFmpeg layer is present, the
-matching DLLs (`avcodec-61`, `avformat-61`, `avutil-59`, `swscale-8`) are
+matching DLLs (`avcodec-63`, `avformat-63`, `avutil-61`, `swscale-10`) are
 copied next to the executable automatically; ship them together.
 
 ### Native build (Linux, core + CLI only)
@@ -152,6 +162,38 @@ per-user, creates Start Menu/desktop shortcuts, adds an entry under
 The installer executable is unsigned, so SmartScreen may ask for confirmation
 the first time it is downloaded and run.
 
+## Tests and CI
+
+The repository does not store media files; the test suite generates its own
+streams with FFmpeg and compares the results with FFmpeg as the reference.
+
+```bash
+# Host build, unit tests, ffprobe, trace_headers and decode comparisons
+cmake -S . -B build-host -DCMAKE_BUILD_TYPE=Release
+bash tests/run_tests.sh build-host
+
+# ASan/UBSan build, sanitizer pass and mutation fuzz
+bash ci/ffmpeg-host.sh   # once: pinned host FFmpeg, same version as shipped
+bash ci/linux.sh asan
+
+# Windows cross-build and installer (needs mingw-w64, nasm, NSIS)
+bash ci/ffmpeg.sh        # once: pinned LGPL FFmpeg 9.1, SHA-256 verified
+bash ci/windows.sh
+```
+
+`tests/run_tests.sh` needs `ffmpeg` and `ffprobe` on `PATH` for encoding the
+vectors. When `ci/ffmpeg-host.sh` has built the pinned FFmpeg, the reference
+decode, `ffprobe` and `trace_headers` checks use that same version as `mtest`,
+so the pixel comparison is exact. It checks frame counts and picture types,
+syntax fields, and decoded frames pixel by pixel on MP4/TS/MKV inputs.
+
+CI runs the same scripts on every push and pull request on Linux x64 and arm64,
+adds an MSVC build and coverage, and runs native Windows checks: CLI decode,
+GUI startup and language switching, portable ZIP, and an installer round trip.
+Pushing a `bitstream-inspector-v<version>` tag re-runs the suite and publishes
+the release with the installer, portable ZIP and `SHA256SUMS`. See the
+[repository README](../README.md#continuous-integration).
+
 ## Command-line tools
 
 `bsinfo` validates the parser without the GUI:
@@ -172,7 +214,8 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 
 ## Verification status
 
-Checked against independent references, not just "it compiles":
+Checked against independent references, not just "it compiles". The checks
+below are automated in `tests/` and run by CI on every push:
 
 | Check | Result |
 |---|---|

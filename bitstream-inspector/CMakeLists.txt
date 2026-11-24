@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(bsinspector VERSION 0.3.0 LANGUAGES CXX)
+project(bsinspector VERSION 0.3.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,14 +22,41 @@ else()
 endif()
 
 # Optional FFmpeg media layer (container demux + decode).
-set(BS_FFMPEG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg-win64")
+# Windows uses the bundled mingw-w64 build in third_party/; other hosts use the
+# system FFmpeg development libraries when they are installed (CI and desktop
+# Linux). The layer stays optional either way.
+set(BS_FFMPEG_BUNDLED "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg-win64")
+set(BS_FFMPEG_INCLUDE_DIR "")
+set(BS_FFMPEG_LIBRARY_DIR "")
+set(BS_FFMPEG_LIBRARIES "")
+if(WIN32 AND EXISTS "${BS_FFMPEG_BUNDLED}/include/libavformat/avformat.h")
+    set(BS_FFMPEG_INCLUDE_DIR "${BS_FFMPEG_BUNDLED}/include")
+    set(BS_FFMPEG_LIBRARY_DIR "${BS_FFMPEG_BUNDLED}/lib")
+elseif(NOT WIN32)
+    find_path(BS_SYSTEM_FFMPEG_INCLUDE_DIR libavformat/avformat.h)
+    find_library(BS_AVFORMAT_LIBRARY avformat)
+    find_library(BS_AVCODEC_LIBRARY avcodec)
+    find_library(BS_AVUTIL_LIBRARY avutil)
+    find_library(BS_SWSCALE_LIBRARY swscale)
+    if(BS_SYSTEM_FFMPEG_INCLUDE_DIR AND BS_AVFORMAT_LIBRARY AND
+       BS_AVCODEC_LIBRARY AND BS_AVUTIL_LIBRARY AND BS_SWSCALE_LIBRARY)
+        set(BS_FFMPEG_INCLUDE_DIR ${BS_SYSTEM_FFMPEG_INCLUDE_DIR})
+        set(BS_FFMPEG_LIBRARIES ${BS_AVFORMAT_LIBRARY} ${BS_AVCODEC_LIBRARY}
+            ${BS_AVUTIL_LIBRARY} ${BS_SWSCALE_LIBRARY})
+    endif()
+endif()
+
 set(BS_MEDIA_TARGET "")
-if(WIN32 AND EXISTS "${BS_FFMPEG_ROOT}/include/libavformat/avformat.h")
+if(BS_FFMPEG_INCLUDE_DIR)
     add_library(bs_media STATIC src/media/media_file.cpp)
     target_link_libraries(bs_media PUBLIC bs_core)
-    target_include_directories(bs_media PUBLIC ${BS_FFMPEG_ROOT}/include)
-    target_link_directories(bs_media PUBLIC ${BS_FFMPEG_ROOT}/lib)
-    target_link_libraries(bs_media PUBLIC avformat avcodec avutil swscale)
+    target_include_directories(bs_media PUBLIC ${BS_FFMPEG_INCLUDE_DIR})
+    if(BS_FFMPEG_LIBRARIES)
+        target_link_libraries(bs_media PUBLIC ${BS_FFMPEG_LIBRARIES})
+    else()
+        target_link_directories(bs_media PUBLIC ${BS_FFMPEG_LIBRARY_DIR})
+        target_link_libraries(bs_media PUBLIC avformat avcodec avutil swscale)
+    endif()
     target_compile_definitions(bs_media PUBLIC BS_HAVE_FFMPEG=1)
     if(MSVC)
         target_compile_options(bs_media PRIVATE /W4)
@@ -56,8 +83,23 @@ if(BS_MEDIA_TARGET)
     endif()
 endif()
 
+# Host-side unit tests (portable core only).
+option(BS_BUILD_TESTS "Build the unit tests" ON)
+if(BS_BUILD_TESTS)
+    enable_testing()
+    add_executable(bs_tests tests/unit_tests.cpp)
+    target_link_libraries(bs_tests PRIVATE bs_core)
+    add_test(NAME unit COMMAND bs_tests)
+endif()
+
 if(WIN32)
-    set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I${CMAKE_CURRENT_SOURCE_DIR}/res")
+    # rc.exe wants /I, windres accepts both; the include path lets the .rc find
+    # app.manifest and app.ico next to itself.
+    if(MSVC)
+        set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} /I\"${CMAKE_CURRENT_SOURCE_DIR}/res\"")
+    else()
+        set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I${CMAKE_CURRENT_SOURCE_DIR}/res")
+    endif()
     add_executable(bsinspector WIN32
         src/ui/main.cpp
         src/ui/frame_list.cpp
@@ -74,7 +116,8 @@ if(WIN32)
     if(BS_MEDIA_TARGET)
         target_link_libraries(bsinspector PRIVATE ${BS_MEDIA_TARGET})
     endif()
-    target_compile_definitions(bsinspector PRIVATE UNICODE _UNICODE)
+    target_compile_definitions(bsinspector PRIVATE UNICODE _UNICODE NOMINMAX
+        WIN32_LEAN_AND_MEAN)
     if(MINGW)
         target_link_options(bsinspector PRIVATE -municode)
         target_link_options(bsinspector PRIVATE -static-libgcc -static-libstdc++)
@@ -82,15 +125,19 @@ if(WIN32)
 endif()
 
 if(BS_MEDIA_TARGET)
-    file(GLOB BS_FFMPEG_DLLS "${BS_FFMPEG_ROOT}/bin/*.dll")
-    set(BS_DLL_TARGETS bsinfo mtest)
-    if(WIN32)
-        list(APPEND BS_DLL_TARGETS bsinspector)
+    file(GLOB BS_FFMPEG_DLLS "${BS_FFMPEG_BUNDLED}/bin/*.dll")
+    # System FFmpeg on Linux has no DLLs to copy; only Windows packaging ships
+    # the bundled shared libraries next to the executables.
+    if(BS_FFMPEG_DLLS)
+        set(BS_DLL_TARGETS bsinfo mtest)
+        if(WIN32)
+            list(APPEND BS_DLL_TARGETS bsinspector)
+        endif()
+        foreach(target ${BS_DLL_TARGETS})
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${BS_FFMPEG_DLLS} $<TARGET_FILE_DIR:${target}>
+                COMMAND_EXPAND_LISTS)
+        endforeach()
     endif()
-    foreach(target ${BS_DLL_TARGETS})
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${BS_FFMPEG_DLLS} $<TARGET_FILE_DIR:${target}>
-            COMMAND_EXPAND_LISTS)
-    endforeach()
 endif()

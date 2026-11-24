@@ -26,6 +26,10 @@ compile_commands.json
 # CMake user presets and locally generated configs
 CMakeUserPresets.json
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # Editor / IDE
 .vscode/
 .idea/

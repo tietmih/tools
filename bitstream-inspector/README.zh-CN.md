@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+[![CI](https://github.com/tietmih/tools/actions/workflows/ci.yml/badge.svg)](https://github.com/tietmih/tools/actions/workflows/ci.yml)
+
 Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表、语法树、十六进制
 视图、码率图和解码画面预览。
 
@@ -49,10 +51,12 @@ Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表�
 
 ## Windows 安装
 
-运行打包步骤生成的安装包（`.exe` 是构建产物，不进 git）：
+从[最新 Release](https://github.com/tietmih/tools/releases/latest) 下载安装包
+或便携 ZIP，或运行下面的打包步骤（二进制是构建产物，不进 git）：
 
 ```
-dist/BitstreamInspector-0.3.0-win64-setup.exe
+dist/BitstreamInspector-0.3.1-win64-setup.exe
+dist/BitstreamInspector-0.3.1-win64-portable.zip
 ```
 
 安装器按用户安装，不需要管理员权限，也不会弹 UAC：
@@ -70,9 +74,10 @@ dist/BitstreamInspector-0.3.0-win64-setup.exe
 
 ## 发布
 
-本工具独立于仓库中的其他工具发布。当前版本 **0.3.0**，tag 格式为
-`bitstream-inspector-v0.3.0`；每个 tag 都有对应的 GitHub Release，附件包含
-Windows 安装包和 `SHA256SUMS`，发布说明提供英文和简体中文两个版本。
+本工具独立于仓库中的其他工具发布。当前版本 **0.3.1**，tag 格式为
+`bitstream-inspector-v0.3.1`；每个 tag 都有对应的 GitHub Release，附件包含
+Windows 安装包、便携 ZIP 和 `SHA256SUMS`，发布说明提供英文和简体中文两个版本。
+发布包由 CI 工作流构建、测试并自动发布。
 
 变更历史见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)，各版本发布说明见
 [docs/releases/](docs/releases/)。
@@ -81,8 +86,12 @@ Windows 安装包和 `SHA256SUMS`，发布说明提供英文和简体中文两�
 
 - 运行图形界面：Windows 10/11 x86-64。
 - 从 Linux 构建：`g++-mingw-w64-x86-64`（GCC 13+）和 CMake 3.16+。
-- 可选媒体层：FFmpeg 7.1 共享库（LGPL 构建，含 H.264/HEVC 解码器，
-  MP4/TS/MKV 解封装器）。没有它时程序仍可构建和运行，但容器输入和画面页不可用。
+- 可选媒体层：Windows 构建使用仓库内置的 FFmpeg 9.1 共享库（LGPL，含
+  H.264/HEVC 解码器，MP4/TS/MKV 解封装器）。Linux 上安装了系统 FFmpeg 开发包
+  （`libavformat-dev`、`libavcodec-dev`、`libavutil-dev`、`libswscale-dev`）时
+  也会启用媒体层。没有 FFmpeg 时程序仍可构建和运行，但容器输入和画面页不可用。
+  内置版本和 SHA-256 固定在 [ci/deps.env](ci/deps.env)；仓库 README 说明每周
+  依赖检查和升级规则。
 
 ## 构建
 
@@ -90,7 +99,7 @@ Windows 安装包和 `SHA256SUMS`，发布说明提供英文和简体中文两�
 
 ```bash
 # 1. 先构建可选的 FFmpeg 层（只需一次）
-bash scripts/build_ffmpeg_mingw.sh /path/to/ffmpeg-n7.1.5.tar.gz \
+bash scripts/build_ffmpeg_mingw.sh /path/to/ffmpeg-9.1.tar.xz \
      /tmp/ffmpeg-build "$PWD/third_party/ffmpeg-win64"
 
 # 2. 配置并构建
@@ -103,7 +112,7 @@ cmake --build build-win -j
 ```
 
 `build-win/bsinspector.exe` 是图形界面。如果 FFmpeg 层存在，构建会自动把
-`avcodec-61`、`avformat-61`、`avutil-59`、`swscale-8` 四个 DLL 复制到 exe 旁边；
+`avcodec-63`、`avformat-63`、`avutil-61`、`swscale-10` 四个 DLL 复制到 exe 旁边；
 分发时必须一起带上。
 
 ### Linux 原生构建（核心库 + 命令行工具）
@@ -140,6 +149,35 @@ bash installer/build_installer.sh /path/to/build-win
 
 安装包没有代码签名，首次从网上下载运行时 Windows SmartScreen 可能会提示一次。
 
+## 测试与 CI
+
+仓库不存放媒体文件；测试套件用 FFmpeg 现场生成码流，并以 FFmpeg 结果作为参考。
+
+```bash
+# 主机构建、单元测试、ffprobe/trace_headers/解码对比
+cmake -S . -B build-host -DCMAKE_BUILD_TYPE=Release
+bash tests/run_tests.sh build-host
+
+# ASan/UBSan 构建、检查与变异 fuzz
+bash ci/ffmpeg-host.sh   # 首次：与出货版本一致的 host FFmpeg
+bash ci/linux.sh asan
+
+# Windows 交叉构建和安装包（需要 mingw-w64、nasm、NSIS）
+bash ci/ffmpeg.sh        # 首次：固定版本 LGPL FFmpeg 9.1，校验 SHA-256
+bash ci/windows.sh
+```
+
+`tests/run_tests.sh` 需要 `PATH` 中有 `ffmpeg` 和 `ffprobe` 来生成码流。执行过
+`ci/ffmpeg-host.sh` 后，参考解码、`ffprobe` 和 `trace_headers` 检查会使用与
+`mtest` 相同的固定 FFmpeg 版本，从而保持逐像素严格比较。检查内容包括帧数/图像
+类型、语法字段，以及 MP4/TS/MKV 解码帧的逐像素对比。
+
+CI 在每次推送和拉取请求时于 Linux x64/arm64 运行同样的脚本，并增加 MSVC 构建、
+覆盖率，以及原生 Windows 检查：CLI 解码、GUI 启动与语言切换、便携 ZIP、安装/
+卸载往返。推送 `bitstream-inspector-v<version>` tag 会重新运行整套测试，并发布
+带安装包、便携 ZIP 和 `SHA256SUMS` 的 Release。详见
+[仓库 README](../README.zh-CN.md#持续集成)。
+
 ## 命令行工具
 
 `bsinfo` 用于不启动 GUI 验证解析器：
@@ -160,7 +198,8 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 
 ## 验证状态
 
-以下结果用独立工具交叉验证，不只是“能编译”：
+以下结果用独立工具交叉验证，不只是“能编译”。这些检查已写入 `tests/`，由 CI
+在每次推送时自动运行：
 
 | 检查项 | 结果 |
 |---|---|

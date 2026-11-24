@@ -1,0 +1,157 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "*-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish (<tool>-vX.Y.Z)
+        required: true
+      publish:
+        description: Publish the GitHub Release (false = dry run)
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: validate tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tool: ${{ steps.meta.outputs.tool }}
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    env:
+      TAG_INPUT: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - name: Parse tag
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="$TAG_INPUT"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          tool="${tag%-v*}"
+          version="${tag##*-v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: tag $tag does not end in a SemVer version" >&2
+            exit 1
+          fi
+          if ! jq -e --arg name "$tool" \
+               '.tools[] | select(.name == $name)' .github/tools.json >/dev/null; then
+            echo "error: $tool is not listed in .github/tools.json" >&2
+            exit 1
+          fi
+          {
+            echo "tool=$tool"
+            echo "tag=$tag"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+      - name: Verify version, notes and documentation
+        shell: bash
+        env:
+          META_TOOL: ${{ steps.meta.outputs.tool }}
+          META_TAG: ${{ steps.meta.outputs.tag }}
+          META_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          tool="$META_TOOL"
+          tag="$META_TAG"
+          version="$META_VERSION"
+          if [ "$(git cat-file -t "$tag" 2>/dev/null || true)" != "tag" ]; then
+            echo "error: $tag is not an annotated tag" >&2
+            exit 1
+          fi
+          git merge-base --is-ancestor "$tag^{commit}" origin/main || {
+            echo "error: tag $tag is not on main" >&2
+            exit 1
+          }
+          if [ -x "$tool/ci/check-version.sh" ]; then
+            bash "$tool/ci/check-version.sh" "$version"
+          fi
+          test -f "$tool/docs/releases/v$version.md"
+          test -f "$tool/docs/releases/v$version.zh-CN.md"
+          python3 scripts/check_bilingual.py
+
+  linux:
+    name: tests
+    needs: prepare
+    uses: ./.github/workflows/_test-linux.yml
+    with:
+      tool: ${{ needs.prepare.outputs.tool }}
+      ref: ${{ needs.prepare.outputs.tag }}
+      artifact_suffix: x64
+      upload_vectors: false
+
+  windows:
+    name: package
+    needs: prepare
+    uses: ./.github/workflows/_build-windows.yml
+    with:
+      tool: ${{ needs.prepare.outputs.tool }}
+      ref: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
+
+  publish:
+    name: publish release
+    needs: [prepare, linux, windows]
+    if: github.event_name != 'workflow_dispatch' || inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      TOOL: ${{ needs.prepare.outputs.tool }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ${{ needs.prepare.outputs.tool }}-installer
+          path: dist
+      - name: Verify assets
+        run: (cd dist && sha256sum -c SHA256SUMS)
+      - name: Build release notes
+        run: |
+          python3 scripts/release_notes.py "$TOOL" "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" --tag "$TAG" > "$RUNNER_TEMP/notes.md"
+          {
+            echo "**SHA-256 / 校验和：**"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+            echo
+            echo '---'
+            echo
+            cat "$RUNNER_TEMP/notes.md"
+          } > "$RUNNER_TEMP/body.md"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title=$(sed -n '1s/^# //p' "$TOOL/docs/releases/v$VERSION.md")
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$title" --notes-file "$RUNNER_TEMP/body.md"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --verify-tag \
+              --title "$title" --notes-file "$RUNNER_TEMP/body.md"
+          fi

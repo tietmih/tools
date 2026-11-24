@@ -5,6 +5,35 @@
 记录 Bitstream Inspector 的重要变更。本工具独立于仓库中其他工具进行版本管理和
 发布，tag 格式为 `bitstream-inspector-v<version>`。
 
+## [0.3.1] - 2026-11-24
+
+### 新增
+
+- GitHub Actions 持续集成。每次推送和拉取请求都会在 Linux 上构建、与 FFmpeg
+  对比解析结果和解码帧、运行 ASan/UBSan 和变异 fuzz、交叉构建 Windows 界面与
+  安装包，并在 Windows 上运行程序及安装/卸载往返测试。
+- 可移植解析核心的单元测试（`tests/unit_tests.cpp`）和脚本化回归套件
+  （`tests/`），测试码流由 FFmpeg 现场生成，不向 git 存放媒体文件。
+- tag 驱动发布：推送 `bitstream-inspector-v<version>` 后自动运行测试、校验
+  tag、源码版本与双语文档一致，并发布安装包和 `SHA256SUMS`。
+- 依赖跟踪：内置 FFmpeg 的版本和 SHA-256 记录在 `ci/deps.env`；每周工作流与
+  上游稳定版比较并创建跟踪 issue，Dependabot 负责更新 GitHub Actions。
+- CI/CD 扩展：Linux x64/arm64 测试、MSVC 构建、覆盖率报告、Windows GUI/安装器
+  冒烟测试、便携 ZIP 和发布 dry-run 开关。
+- GitHub Actions 固定到 commit SHA。
+
+### 修复
+
+- H.264 POC 类型 1/2：`FrameNumOffset` 现在会跨同一个 IDR 周期内的
+  `frame_num` 回绕累加。此前 POC 在第二次回绕后停止增长并重复先前的值。
+
+### 变更
+
+- Windows 内置 FFmpeg 从 7.1.5 升级到 9.1（LGPL，仍未启用 GPL 组件）；Linux
+  测试参考版本也改为同一固定版本。
+- 版本号统一升级到 0.3.1：CMake、Windows 版本资源、About 对话框和安装器。
+- 发布检查清单改为 tag 驱动；仅在 Actions 不可用时才手工创建发布附件。
+
 ## [0.3.0] - 2026-11-24
 
 ### 新增

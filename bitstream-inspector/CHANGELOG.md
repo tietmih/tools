@@ -6,6 +6,42 @@ All notable changes to Bitstream Inspector. The tool is versioned and released
 independently from the rest of the repository. Tags use the form
 `bitstream-inspector-v<version>`.
 
+## [0.3.1] - 2026-11-24
+
+### Added
+
+- GitHub Actions continuous integration. Every push and pull request builds
+  the tool on Linux, compares parser output and decoded frames against FFmpeg,
+  runs ASan/UBSan with a mutation-fuzz pass, cross-builds the Windows GUI and
+  installer, and runs the binaries plus an installer round trip on Windows.
+- Unit tests for the portable parser core (`tests/unit_tests.cpp`) and a
+  scripted regression suite (`tests/`) that generates its own streams with
+  FFmpeg; no media files are stored in git.
+- Tag-driven releases: pushing `bitstream-inspector-v<version>` runs the tests,
+  verifies that the tag, source version and bilingual release notes agree, and
+  publishes the installer and `SHA256SUMS` as a GitHub Release.
+- Dependency tracking: the bundled FFmpeg version and SHA-256 live in
+  `ci/deps.env`; a weekly workflow compares them with upstream stable releases
+  and opens a tracking issue, and Dependabot keeps GitHub Actions current.
+- CI/CD expansion: Linux x64/arm64 tests, MSVC build, coverage report, Windows
+  GUI/installer smoke tests, portable ZIP asset and a release dry-run switch.
+- GitHub Actions are pinned to commit SHAs.
+
+### Fixed
+
+- H.264 POC types 1 and 2: `FrameNumOffset` is now carried across `frame_num`
+  wrap-arounds within one IDR period. Previously the POC stopped increasing at
+  the second wrap and repeated earlier values.
+
+### Changed
+
+- Bundled Windows FFmpeg upgraded from 7.1.5 to 9.1 (LGPL, still no GPL
+  components); the Linux test reference now uses the same pinned version.
+- Version bumped to 0.3.1 across CMake, Windows resources, About box and the
+  installer.
+- The release checklist is now tag-driven; creating release assets by hand is
+  only a fallback when Actions is unavailable.
+
 ## [0.3.0] - 2026-11-24
 
 ### Added
