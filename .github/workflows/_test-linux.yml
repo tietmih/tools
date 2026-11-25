@@ -58,6 +58,9 @@ jobs:
         with:
           name: ${{ inputs.tool }}-ffmpeg-host-${{ inputs.artifact_suffix }}
           path: ${{ inputs.tool }}/build-deps/ffmpeg-host
+      - name: Make artifact binaries executable
+        if: inputs.needs_deps
+        run: chmod +x "${{ inputs.tool }}"/build-deps/ffmpeg-host/bin/* 2>/dev/null || true
       - name: Restore host FFmpeg
         if: '!inputs.needs_deps'
         id: host-ffmpeg
