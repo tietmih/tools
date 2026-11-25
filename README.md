@@ -43,6 +43,9 @@ Conventions used by every project in this repository:
 - Documentation is bilingual: `<name>.md` in English and `<name>.zh-CN.md` in
   Simplified Chinese, each with a language-switch link at the top. Legal license
   texts (`LICENSE`, LGPL) stay in their original language.
+- Work branches are temporary. Create a branch for each change, fast-forward it
+  into `main`, and delete it. `cleanup-branches.yml` removes merged `ci/*`
+  branches automatically after a push to `main`.
 - GUI applications provide a runtime English/Simplified-Chinese switch. Syntax
   terms from the standards (NAL types, SPS/PPS/VPS, slice/PPS/SPS field names,
   codec and profile names) remain in English in both UI languages.

@@ -39,6 +39,8 @@
 - 每个工具独立版本；每个发布版本都有 tag 和对应的 GitHub Release（见下）。
 - 文档双语：`<name>.md` 英文、`<name>.zh-CN.md` 简体中文，文件顶部提供语言切换
   链接。法律许可证原文（`LICENSE`、LGPL）保持原语言。
+- 工作分支是临时的：每个改动单独建分支，fast-forward 合并到 `main` 后删除。
+  推送 `main` 后 `cleanup-branches.yml` 会自动删除已合并的 `ci/*` 分支。
 - 图形界面支持运行时英文/简体中文切换。标准中的语法术语（NAL 类型、SPS/PPS/VPS、
   slice/PPS/SPS 字段名、编码与 profile 名称）在两种界面语言下都保持英文。
 
