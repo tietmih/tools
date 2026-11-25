@@ -267,17 +267,40 @@ if ($running.HasExited) {
 $uninstaller = Join-Path $defaultDir 'Uninstall.exe'
 $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' `
     -PassThru -Wait
-if ($uninstall.ExitCode -ne 2) {
-    throw "expected uninstaller exit 2 with a running app, got $($uninstall.ExitCode)"
+$exitCode = $uninstall.ExitCode
+if ($exitCode -ne 0 -and $exitCode -ne 2) {
+    throw "unexpected uninstaller exit code with a running app: $exitCode"
 }
-Assert-File (Join-Path $defaultDir 'bsinspector.exe')
-Assert-File (Join-Path $defaultDir 'tools\bsinfo.exe')
-if (-not (Test-Path $regPath)) {
-    throw "uninstaller removed the registry entry although it aborted"
+if ($exitCode -eq 2) {
+    # The locked executable could not be removed: nothing else may be touched.
+    Assert-File (Join-Path $defaultDir 'bsinspector.exe')
+    Assert-File (Join-Path $defaultDir 'tools\bsinfo.exe')
+    if (-not (Test-Path $regPath)) {
+        throw "uninstaller removed the registry entry although it aborted"
+    }
+    $running.Kill()
+    $running.WaitForExit()
+    Start-Sleep -Seconds 1
+    Uninstall-App $defaultDir
+} else {
+    # Windows 10+ marks the running image delete-pending and finishes the
+    # uninstall; the process keeps running until it is closed.
+    if ($running.HasExited) {
+        throw "running app exited during uninstall"
+    }
+    if (Test-Path $regPath) {
+        throw "uninstaller kept the registry entry after a successful uninstall"
+    }
+    $running.Kill()
+    $running.WaitForExit()
+    Start-Sleep -Seconds 1
+    if (Test-Path (Join-Path $defaultDir 'bsinspector.exe')) {
+        throw "bsinspector.exe was not removed after the process exited"
+    }
+    Remove-Item -Recurse -Force $defaultDir -ErrorAction SilentlyContinue
+    if (Test-Path $defaultDir) {
+        throw "install directory still exists after the uninstall"
+    }
 }
-$running.Kill()
-$running.WaitForExit()
-Start-Sleep -Seconds 1
-Uninstall-App $defaultDir
 
 Write-Host "windows smoke test passed"Write-Host "windows smoke test passed"

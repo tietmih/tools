@@ -175,8 +175,8 @@ Section "Uninstall"
     Sleep 1500
     Delete "$INSTDIR\bsinspector.exe"
     IfFileExists "$INSTDIR\bsinspector.exe" 0 uninstall_continue
-    ; Still running: stop before touching anything else so the installation
-    ; stays consistent. Exit code 2 tells scripts the app must be closed.
+    ; Still running on a system that refuses to delete mapped images: stop
+    ; before touching anything else. Exit code 2 tells scripts to close the app.
     SetErrorLevel 2
     Abort
   uninstall_continue:

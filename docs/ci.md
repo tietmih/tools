@@ -71,6 +71,17 @@ Release assets are the Windows installer, portable ZIP, a CycloneDX 1.6 SBOM
 checksum block. The publish job attests build provenance for all three
 artifacts.
 
+## Installer behaviour
+
+The per-user uninstaller handles a running application explicitly:
+
+- interactive: it asks the user to close the app and offers Retry/Cancel;
+- silent (`/S`): it retries once, then aborts with exit code 2 and leaves the
+  installation untouched, so scripts can close the app and retry;
+- `windows-smoke.ps1` covers default install, `/D=`, `/LANG=2052`, upgrade from
+  0.3.0, uninstall, and the running-app abort path (exit 2, files and registry
+  intact, successful uninstall after closing the app).
+
 ## Reproducible builds
 
 The Windows packaging step is reproducible for identical sources and
@@ -120,8 +131,6 @@ Items that need credentials, a policy decision or a larger follow-up:
 - **GUI automation**: startup, language switching, clean exit, portable ZIP
   and installer scenarios are covered; splitter dragging and every dialog are
   not.
-- **Installer edge cases**: uninstalling while the app is running (the
-  uninstaller retry path) is not automated.
 - **Parser vectors**: multi-PPS switching, dependent slice segments and PAFF
   field coding are not generated; MBAFF/interlaced is covered.
 - **Efficiency**: `release.yml` rebuilds FFmpeg on tags because cache scopes
