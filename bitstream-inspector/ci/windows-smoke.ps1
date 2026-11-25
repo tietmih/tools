@@ -250,4 +250,34 @@ if ($newVersion -eq '0.3.0') {
 }
 Uninstall-App $defaultDir
 
-Write-Host "windows smoke test passed"
+Write-Host "== installer: uninstall while the GUI is running =="
+Start-Installer $setup.FullName '/S'
+Assert-Installed $defaultDir
+$running = Start-Process -FilePath (Join-Path $defaultDir 'bsinspector.exe') `
+    -PassThru
+$deadline = (Get-Date).AddSeconds(20)
+do {
+    Start-Sleep -Milliseconds 500
+    $running.Refresh()
+} while (-not $running.HasExited -and $running.MainWindowHandle -eq 0 -and
+         (Get-Date) -lt $deadline)
+if ($running.HasExited) {
+    throw "bsinspector.exe exited before the uninstall test"
+}
+$uninstaller = Join-Path $defaultDir 'Uninstall.exe'
+$uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' `
+    -PassThru -Wait
+if ($uninstall.ExitCode -ne 2) {
+    throw "expected uninstaller exit 2 with a running app, got $($uninstall.ExitCode)"
+}
+Assert-File (Join-Path $defaultDir 'bsinspector.exe')
+Assert-File (Join-Path $defaultDir 'tools\bsinfo.exe')
+if (-not (Test-Path $regPath)) {
+    throw "uninstaller removed the registry entry although it aborted"
+}
+$running.Kill()
+$running.WaitForExit()
+Start-Sleep -Seconds 1
+Uninstall-App $defaultDir
+
+Write-Host "windows smoke test passed"Write-Host "windows smoke test passed"

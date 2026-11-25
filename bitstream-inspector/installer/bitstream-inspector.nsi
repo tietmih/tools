@@ -174,6 +174,11 @@ Section "Uninstall"
     IfFileExists "$INSTDIR\bsinspector.exe" 0 uninstall_continue
     Sleep 1500
     Delete "$INSTDIR\bsinspector.exe"
+    IfFileExists "$INSTDIR\bsinspector.exe" 0 uninstall_continue
+    ; Still running: stop before touching anything else so the installation
+    ; stays consistent. Exit code 2 tells scripts the app must be closed.
+    SetErrorLevel 2
+    Abort
   uninstall_continue:
 
   Delete "$INSTDIR\avcodec-63.dll"
