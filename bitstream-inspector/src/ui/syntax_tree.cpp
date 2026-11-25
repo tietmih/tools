@@ -148,7 +148,7 @@ void SyntaxTree::setFrame(const Stream *stream, int frame_index)
         TreeView_SelectItem(hwnd_, first);
 }
 
-SyntaxTree::Selection SyntaxTree::selection() const { return selection_; }
+const SyntaxTree::Selection &SyntaxTree::selection() const { return selection_; }
 
 LRESULT SyntaxTree::onCustomDraw(NMTVCUSTOMDRAW *cd)
 {

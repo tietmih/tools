@@ -34,6 +34,10 @@ jobs:
         run: python3 scripts/check_bilingual.py
       - name: Documentation links
         run: python3 scripts/check_links.py
+      - name: Markdown style
+        run: |
+          mapfile -t docs < <(git ls-files '*.md')
+          npx --yes markdownlint-cli2@0.24.2 "${docs[@]}"
       - name: Version consistency
         run: |
           while IFS= read -r tool; do

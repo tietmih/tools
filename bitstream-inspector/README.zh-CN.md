@@ -10,7 +10,7 @@ Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表�
 按公开的 ITU-T H.264/H.265 语法规范从零实现，不包含任何商业分析器的代码或资源，
 也没有对 Elecard 等产品做反汇编。
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ 文件  视图  语言  帮助                                                   │
 │ [打开...] [< 上一帧] [下一帧 >] [上个关键帧] [下个关键帧]  MP4  H.264 …   │
@@ -54,7 +54,7 @@ Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表�
 从[最新 Release](https://github.com/tietmih/tools/releases/latest) 下载安装包
 或便携 ZIP，或运行下面的打包步骤（二进制是构建产物，不进 git）：
 
-```
+```text
 dist/BitstreamInspector-0.3.1-win64-setup.exe
 dist/BitstreamInspector-0.3.1-win64-portable.zip
 ```
@@ -228,7 +228,7 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 
 ## 目录结构
 
-```
+```text
 src/core/     可移植码流解析（bit reader、NAL 分割、H.264/H.265 语法、流模型）
 src/media/    可选 FFmpeg 解封装 + 解码层（不向外部暴露 FFmpeg 类型）
 src/ui/       Win32 图形界面（帧列表、语法树、十六进制视图、画面、图表）

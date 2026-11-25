@@ -11,7 +11,7 @@ Writes from scratch against the published ITU-T H.264 and H.265 syntax
 specifications. It is not derived from, and contains no code or assets from,
 any commercial analyzer.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ File  View  Help                                                         │
 │ [Open...] [< Prev] [Next >] [Prev Key] [Next Key]  MP4  H.264 640x360 …  │
@@ -63,7 +63,8 @@ Download the installer (or the portable ZIP) from the
 [latest release](https://github.com/tietmih/tools/releases/latest), or run the
 packaging step below (the binaries are build artifacts and are not checked into
 git):
-```
+
+```text
 dist/BitstreamInspector-0.3.1-win64-setup.exe
 dist/BitstreamInspector-0.3.1-win64-portable.zip
 ```
@@ -248,7 +249,7 @@ containers.
 
 ## Layout
 
-```
+```text
 src/core/     portable bitstream parsing (bit reader, NAL splitter, H.264/H.265 syntax, stream model)
 src/media/    optional FFmpeg demux + decode layer (no FFmpeg types leak out)
 src/ui/       Win32 GUI (frame list, syntax tree, hex view, video view, chart)

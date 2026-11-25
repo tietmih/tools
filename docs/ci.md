@@ -8,7 +8,8 @@ GitHub Actions is the only build and release path. Workflows live in
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` | push/PR touching a tool, `scripts/`, or a workflow | Discovers tools from `tools.json` and runs the Linux x64/arm64 suites, Windows cross-build, native Windows smoke test, MSVC build and coverage |
-| `repo-checks.yml` | every push/PR | Bilingual doc pairing, link/anchor checks, version literals, shellcheck, Python syntax, actionlint |
+| `repo-checks.yml` | every push/PR | Bilingual doc pairing, link/anchor checks, version literals, shellcheck, markdownlint, Python syntax, actionlint |
+| `static-analysis.yml` | code changes | cppcheck and clang-tidy analyzer checks for the parser, media layer, CLI and unit tests |
 | `release.yml` | tag `<tool>-v<version>`, or manual dispatch | Validates the annotated tag, version and bilingual notes, re-runs tests, builds the package, attests provenance and publishes the GitHub Release. Manual dispatch accepts `publish: false` for a dry run |
 | `dependency-check.yml` | weekly/manual | Compares `ci/deps.env` with upstream FFmpeg and reports the runner toolchain; opens or updates a tracking issue |
 | `nightly.yml` | daily/manual | Builds the parser with ASan/UBSan and runs 3000 mutation-fuzz iterations |
@@ -27,6 +28,7 @@ Every directory listed in `.github/tools.json` provides:
   `windows-2022`.
 - `ci/msvc.ps1` — MSVC compile and unit tests.
 - `ci/coverage.sh` — instrumented build, suite and gcovr report.
+- `ci/static.sh` — cppcheck and clang-tidy analyzer checks.
 - Optional `ci/ffmpeg.sh` and `ci/ffmpeg-host.sh` — pinned FFmpeg builds for
   Windows and Linux tests.
 
@@ -97,8 +99,6 @@ Items that need credentials, a policy decision or a larger follow-up:
 - **Reproducible builds**: no double-build hash comparison for the installer.
 - **SBOM**: build provenance is attested, but no CycloneDX/SPDX SBOM is
   generated.
-- **Static analysis**: clang-tidy/cppcheck, MSVC `/WX` and markdownlint are not
-  wired into CI.
 - **Coverage reporting**: the line threshold is enforced (60%), but the report
   is not posted as a PR comment.
 - **GUI automation**: startup, language switching, clean exit, portable ZIP

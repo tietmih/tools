@@ -1,0 +1,46 @@
+name: static analysis
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "*/src/**"
+      - "*/tools/**"
+      - "*/tests/**"
+      - "*/ci/**"
+      - "*/CMakeLists.txt"
+      - ".github/workflows/static-analysis.yml"
+  pull_request:
+    paths:
+      - "*/src/**"
+      - "*/tools/**"
+      - "*/tests/**"
+      - "*/ci/**"
+      - "*/CMakeLists.txt"
+      - ".github/workflows/static-analysis.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: static-analysis-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install analyzers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-tidy cppcheck cmake g++ \
+            libavformat-dev libavcodec-dev libavutil-dev libswscale-dev
+      - name: cppcheck and clang-tidy
+        run: bash bitstream-inspector/ci/static.sh

@@ -67,8 +67,9 @@ void parseH264Vui(FieldReader &r, H264Sps &sps)
     r.flag("aspect_ratio_info_present_flag", aspect);
     if (aspect) {
         uint32_t idc = r.u(8, "aspect_ratio_idc");
-        std::string name =
-            idc < std::size(kAspectRatioNames) ? kAspectRatioNames[idc] : "Reserved";
+        std::string name = "Reserved";
+        if (idc < std::size(kAspectRatioNames))
+            name = kAspectRatioNames[idc];
         r.note("  meaning", name);
         if (idc == 255) {
             sps.sar_num = r.u(16, "sar_width");
@@ -405,9 +406,11 @@ const char *seiPayloadName(int type)
         "spare", "spare", "spare", "spare", "spare", "spare", "mastering_display_colour_volume",
         "colour_remapping_info", "spare", "spare",
     };
-    if (type >= 0 && type < static_cast<int>(std::size(names)))
-        return names[type];
-    return "reserved";
+    const int count = static_cast<int>(std::size(names));
+    if (type < 0 || type >= count)
+        return "reserved";
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): guarded by count.
+    return names[static_cast<size_t>(type)];
 }
 
 } // namespace

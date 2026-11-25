@@ -29,7 +29,7 @@ public:
     HWND hwnd() const { return hwnd_; }
     void clear();
     void setFrame(const Stream *stream, int frame_index);
-    Selection selection() const;
+    const Selection &selection() const;
     LRESULT handleNotify(NMHDR *hdr);
 
 private:

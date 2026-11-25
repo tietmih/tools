@@ -924,7 +924,7 @@ std::wstring defaultExportName(const wchar_t *suffix)
     std::wstring name = baseName(g_app.path);
     size_t dot = name.find_last_of(L'.');
     if (dot != std::wstring::npos && dot > 0)
-        name = name.substr(0, dot);
+        name.resize(dot);
     return name + suffix;
 }
 

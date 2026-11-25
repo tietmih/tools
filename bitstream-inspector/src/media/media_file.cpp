@@ -451,8 +451,7 @@ bool MediaFile::extractAnnexB(std::vector<uint8_t> &es, std::string &error)
 
     AVPacket *pkt = av_packet_alloc();
     AVPacket *out = av_packet_alloc();
-    int read_ret = 0;
-    while ((read_ret = av_read_frame(impl_->fmt, pkt)) >= 0) {
+    while (av_read_frame(impl_->fmt, pkt) >= 0) {
         if (pkt->stream_index != impl_->stream) {
             av_packet_unref(pkt);
             continue;
@@ -702,13 +701,14 @@ bool MediaFile::decodePacket(int packet_index, std::vector<uint8_t> &bgra,
             return false;
         if (!impl_->convert(f, bgra, width, height, error))
             return false;
-        matched = true;
         return true;
     };
 
     // Pass 0 seeks to the keyframe preceding the target. Some demuxers (notably
     // MPEG-TS) may land past it; pass 1 then decodes from the beginning.
-    for (int pass = 0; pass < 2 && !matched; pass++) {
+    for (int pass = 0; pass < 2; pass++) {
+        if (matched)
+            break;
         if (pass == 0) {
             if (!impl_->seekToTimestamp(seek_ts))
                 impl_->seekToStart();
@@ -733,6 +733,7 @@ bool MediaFile::decodePacket(int packet_index, std::vector<uint8_t> &bgra,
                 continue;
             while (avcodec_receive_frame(impl_->dec, frame) == 0) {
                 if (tryFrame(frame)) {
+                    matched = true;
                     av_frame_unref(frame);
                     break;
                 }
@@ -747,6 +748,7 @@ bool MediaFile::decodePacket(int packet_index, std::vector<uint8_t> &bgra,
             avcodec_send_packet(impl_->dec, nullptr);
             while (avcodec_receive_frame(impl_->dec, frame) == 0) {
                 if (tryFrame(frame)) {
+                    matched = true;
                     av_frame_unref(frame);
                     break;
                 }

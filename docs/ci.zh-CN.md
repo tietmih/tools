@@ -8,7 +8,8 @@ GitHub Actions 是唯一的构建和发布路径。工作流位于 `.github/work
 | 工作流 | 触发条件 | 内容 |
 |---|---|---|
 | `ci.yml` | 涉及工具、`scripts/` 或工作流的推送/PR | 从 `tools.json` 自动发现工具，运行 Linux x64/arm64、Windows 交叉构建、原生 Windows 冒烟、MSVC 和覆盖率 |
-| `repo-checks.yml` | 每次推送/PR | 双语文档配对、链接/锚点、版本字面量、shellcheck、Python 语法、actionlint |
+| `repo-checks.yml` | 每次推送/PR | 双语文档配对、链接/锚点、版本字面量、shellcheck、markdownlint、Python 语法、actionlint |
+| `static-analysis.yml` | 代码变更 | 对解析器、媒体层、命令行工具和单元测试跑 cppcheck 与 clang-tidy analyzer 检查 |
 | `release.yml` | tag `<tool>-v<version>` 或手动 | 校验注释 tag、版本和双语文档，重跑测试、构建安装包、生成 provenance 并发布 Release；手动触发可传 `publish: false` 做 dry-run |
 | `dependency-check.yml` | 每周/手动 | 对比 `ci/deps.env` 与上游 FFmpeg，报告 runner 工具链，创建/更新跟踪 issue |
 | `nightly.yml` | 每天/手动 | 用 ASan/UBSan 构建解析器并跑 3000 轮变异 fuzz |
@@ -26,6 +27,7 @@ GitHub Actions 是唯一的构建和发布路径。工作流位于 `.github/work
 - `ci/windows-smoke.ps1` —— 原生 GUI/安装器/便携包检查，在 `windows-2022` 运行。
 - `ci/msvc.ps1` —— MSVC 编译和单元测试。
 - `ci/coverage.sh` —— 插桩构建、测试和 gcovr 报告。
+- `ci/static.sh` —— cppcheck 和 clang-tidy analyzer 检查。
 - 可选的 `ci/ffmpeg.sh`、`ci/ffmpeg-host.sh` —— 固定版本的 Windows/Linux FFmpeg。
 
 新增工具只需添加这些脚本并在 `tools.json` 登记，工作流会自动发现。空工具分类使用
@@ -88,7 +90,6 @@ bash ci/coverage.sh         # 需要 gcovr
 - **Windows 2025 / ARM64 Windows**：目前只在 `windows-2022` x64 上验证。
 - **可复现构建**：没有对安装包做两次构建的哈希对比。
 - **SBOM**：已生成构建 provenance，但没有 CycloneDX/SPDX SBOM。
-- **静态分析**：clang-tidy/cppcheck、MSVC `/WX` 和 markdownlint 尚未接入 CI。
 - **覆盖率报告**：已强制 60% 行覆盖率阈值，但不会把报告评论到 PR。
 - **GUI 自动化**：覆盖启动、语言切换、正常退出、便携 ZIP 和安装器场景；不覆盖
   拖拽分栏和所有对话框。
