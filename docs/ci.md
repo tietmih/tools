@@ -71,6 +71,23 @@ Release assets are the Windows installer, portable ZIP, a CycloneDX 1.6 SBOM
 checksum block. The publish job attests build provenance for all three
 artifacts.
 
+## Reproducible builds
+
+The Windows packaging step is reproducible for identical sources and
+toolchains:
+
+- executable link steps pass `-Wl,--no-insert-timestamp`, so PE headers carry
+  no build time;
+- `build_installer.sh` pins every staged file's mtime to `SOURCE_DATE_EPOCH`
+  (default `1735689600`, exportable) before NSIS and `zip -X` run;
+- the SBOM uses that epoch as its timestamp and omits the build host;
+- `_build-windows.yml` rebuilds the whole package from clean build directories
+  and fails if any asset byte differs from the first build.
+
+Only the documented toolchain (Ubuntu 24.04 mingw-w64, pinned FFmpeg 9.1,
+NSIS) is expected to reproduce; a different compiler or NSIS version may still
+produce different bytes.
+
 ## Local reproduction
 
 The same scripts run locally. Typical sequence for `bitstream-inspector`:
@@ -98,7 +115,6 @@ Items that need credentials, a policy decision or a larger follow-up:
   advisory for direct pushes.
 - **ARM64 Windows**: native checks run on `windows-2022` and `windows-2025`
   x64; Windows on ARM is not validated.
-- **Reproducible builds**: no double-build hash comparison for the installer.
 - **Coverage reporting**: the line threshold is enforced (60%), but the report
   is not posted as a PR comment.
 - **GUI automation**: startup, language switching, clean exit, portable ZIP

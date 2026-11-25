@@ -66,6 +66,19 @@ Release 附件是 Windows 安装包、便携 ZIP、CycloneDX 1.6 SBOM（`*.cdx.j
 `SHA256SUMS`；正文包含中英两种语言和校验和块。publish job 会为三个附件生成构建
 provenance。
 
+## 可复现构建
+
+在源码和工具链相同的前提下，Windows 打包步骤可复现：
+
+- 可执行文件链接加 `-Wl,--no-insert-timestamp`，PE 头不写入构建时间；
+- `build_installer.sh` 在 NSIS 与 `zip -X` 之前把所有待打包文件的 mtime 固定为
+  `SOURCE_DATE_EPOCH`（默认 `1735689600`，可覆盖）；
+- SBOM 使用该时间戳且不写构建主机；
+- `_build-windows.yml` 从干净构建目录重新打包，任何一个附件字节不同即失败。
+
+只有文档记录的工具链（Ubuntu 24.04 mingw-w64、固定 FFmpeg 9.1、NSIS）预期
+可复现；不同编译器或 NSIS 版本仍可能产生不同字节。
+
 ## 本地复现
 
 同一套脚本可在本地运行。`bitstream-inspector` 的典型顺序：
@@ -90,7 +103,6 @@ bash ci/coverage.sh         # 需要 gcovr
   必需检查和强制 PR 按直接推送流程有意关闭；直接推送时 CI 仍是建议性的。
 - **ARM64 Windows**：原生检查在 `windows-2022` 和 `windows-2025` x64 上运行；
   Windows on ARM 尚未验证。
-- **可复现构建**：没有对安装包做两次构建的哈希对比。
 - **覆盖率报告**：已强制 60% 行覆盖率阈值，但不会把报告评论到 PR。
 - **GUI 自动化**：覆盖启动、语言切换、正常退出、便携 ZIP 和安装器场景；不覆盖
   拖拽分栏和所有对话框。

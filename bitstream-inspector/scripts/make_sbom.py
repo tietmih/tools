@@ -10,7 +10,6 @@ import datetime
 import hashlib
 import json
 import os
-import platform
 import re
 import shutil
 import subprocess
@@ -80,6 +79,9 @@ def main():
     ap.add_argument("--makensis",
                     default=os.environ.get("MAKENSIS") or
                     shutil.which("makensis") or "makensis")
+    ap.add_argument("--source-date-epoch", type=int,
+                    default=int(os.environ.get("SOURCE_DATE_EPOCH", "0")))
+    ap.add_argument("--build-host", default="reproducible")
     args = ap.parse_args()
 
     deps = read_env(args.deps)
@@ -124,8 +126,13 @@ def main():
     serial = uuid.uuid5(
         uuid.NAMESPACE_URL,
         f"{PROJECT_URL}/releases/tag/bitstream-inspector-v{args.version}")
-    timestamp = datetime.datetime.now(
-        datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if args.source_date_epoch > 0:
+        timestamp = datetime.datetime.fromtimestamp(
+            args.source_date_epoch,
+            datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        timestamp = datetime.datetime.now(
+            datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     app_ref = f"pkg:generic/bitstream-inspector@{args.version}"
     ffmpeg_ref = f"pkg:generic/ffmpeg@{ffmpeg_version}"
@@ -151,7 +158,7 @@ def main():
                 ],
             },
             "properties": [
-                {"name": "build:host", "value": platform.platform()},
+                {"name": "build:host", "value": args.build_host},
                 {"name": "build:commit", "value": args.commit or "unknown"},
             ],
         },

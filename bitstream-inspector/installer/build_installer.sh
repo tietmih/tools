@@ -16,6 +16,10 @@ STAGE="$PROJECT/installer/staging"
 DIST="$ROOT/dist"
 APP_ICON="$PROJECT/res/app.ico"
 OUT="$DIST/BitstreamInspector-${VERSION}-win64-setup.exe"
+# Reproducible archives: fixed timestamps unless the caller overrides.
+SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-1735689600}
+export SOURCE_DATE_EPOCH
+export TZ=UTC
 
 required=(bsinspector.exe bsinfo.exe avcodec-63.dll avformat-63.dll avutil-61.dll swscale-10.dll)
 for f in "${required[@]}"; do
@@ -52,6 +56,10 @@ cp "$PROJECT/third_party/ffmpeg-win64/COPYING.LGPLv2.1" "$STAGE/LICENSES/FFmpeg-
 cp "$PROJECT/third_party/ffmpeg-win64/BUILD-INFO.txt" "$STAGE/LICENSES/FFmpeg-BUILD-INFO.txt"
 cp "$PROJECT/third_party/ffmpeg-win64/BUILD-INFO.zh-CN.txt" "$STAGE/LICENSES/FFmpeg-BUILD-INFO.zh-CN.txt"
 
+# The installer and the ZIP embed file mtimes; pin them before packaging so
+# the same sources produce byte-identical artifacts.
+find "$STAGE" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+
 MAKENSIS=${MAKENSIS:-}
 if [ -z "$MAKENSIS" ]; then
     if command -v makensis >/dev/null 2>&1; then
@@ -80,7 +88,7 @@ if ! command -v zip >/dev/null 2>&1; then
     exit 1
 fi
 rm -f "$PORTABLE"
-( cd "$STAGE" && zip -qr "$PORTABLE" . )
+( cd "$STAGE" && zip -X -qr "$PORTABLE" . )
 
 SBOM="$DIST/BitstreamInspector-${VERSION}-win64-sbom.cdx.json"
 python3 -I "$PROJECT/scripts/make_sbom.py" \
@@ -90,6 +98,7 @@ python3 -I "$PROJECT/scripts/make_sbom.py" \
     --deps "$PROJECT/ci/deps.env" \
     --build-info "$PROJECT/third_party/ffmpeg-win64/BUILD-INFO.txt" \
     --makensis "$MAKENSIS" \
+    --source-date-epoch "$SOURCE_DATE_EPOCH" \
     --out "$SBOM"
 
 ( cd "$DIST" && sha256sum "$(basename "$OUT")" "$(basename "$PORTABLE")" \
