@@ -39,7 +39,8 @@ python3 "$ROOT/tests/check_headers.py" --bsinfo "$BUILD/bsinfo" \
     --ffmpeg "$REF_FFMPEG" --vectors "$VECTORS"
 if [ -x "$BUILD/mtest" ]; then
     python3 "$ROOT/tests/check_decode.py" --mtest "$BUILD/mtest" \
-        --ffmpeg "$REF_FFMPEG" --ffprobe "$FFPROBE" --vectors "$VECTORS"
+        --ffmpeg "$REF_FFMPEG" --ffprobe "$FFPROBE" --vectors "$VECTORS" \
+        --expected-out "$VECTORS/expected.json"
 fi
 
 if ! command -v gcovr >/dev/null 2>&1; then
@@ -47,9 +48,11 @@ if ! command -v gcovr >/dev/null 2>&1; then
     exit 1
 fi
 mkdir -p "$OUT"
+MIN_COVERAGE=${MIN_COVERAGE:-60}
 gcovr --root "$ROOT" --filter "$ROOT/src" --object-directory "$BUILD" \
     --exclude '.*/CMakeFiles/.*' \
     --gcov-ignore-errors=no_working_dir_found \
+    --fail-under-line "$MIN_COVERAGE" \
     --xml-pretty --output "$OUT/coverage.xml" \
     --html-details "$OUT/index.html"
-echo "coverage report: $OUT/index.html"
+echo "coverage report: $OUT/index.html (minimum line coverage: $MIN_COVERAGE%)"

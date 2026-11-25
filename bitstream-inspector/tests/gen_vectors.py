@@ -72,6 +72,14 @@ def main():
     h264_long = encode(ff, out, "h264_longgop.h264", "h264",
                        x264 + ["-g", "120", "-bf", "0", "-f", "h264"],
                        frames=30)
+    # Interlaced/MBAFF, 4:4:4 and AUD/SEI variants.
+    h264_interlaced = encode(ff, out, "h264_interlaced.h264", "h264",
+                             x264 + ["-flags", "+ildct+ilme", "-x264-params",
+                                     "tff=1:mbaff=1", "-f", "h264"], frames=20)
+    h264_444 = encode(ff, out, "h264_444.h264", "h264",
+                      ["-preset", "ultrafast", "-pix_fmt", "yuv444p",
+                       "-profile:v", "high444", "-bf", "0", "-f", "h264"],
+                      frames=20)
 
     # H.265 Main and Main10, one with B frames.
     h265_bf0 = encode(ff, out, "h265_bf0.mp4", "h265",
@@ -87,6 +95,16 @@ def main():
                           "-profile:v", "main10", "-x265-params",
                           "log-level=error:keyint=10:bframes=0", "-f", "hevc"],
                          frames=20)
+    h265_main12 = encode(ff, out, "h265_main12.h265", "h265",
+                         ["-preset", "ultrafast", "-pix_fmt", "yuv420p12le",
+                          "-profile:v", "main12", "-x265-params",
+                          "log-level=error:keyint=10:bframes=0", "-f", "hevc"],
+                         frames=20)
+    h265_tiles = encode(ff, out, "h265_tiles.h265", "h265",
+                        ["-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                         "-x265-params",
+                         "log-level=error:keyint=10:bframes=0:wpp=1:tiles=2x2",
+                         "-f", "hevc"], frames=20, size="640x480")
 
     # Annex B elementary streams extracted from the MP4.
     h264_es = os.path.join(out, "h264_bf0.h264")
@@ -96,8 +114,9 @@ def main():
     remux(ff, h265_bf0, h265_es,
           ["-bsf:v", "hevc_mp4toannexb", "-f", "hevc"])
 
-    raw = [h264_es, h264_b, h264_slices, h264_422, h264_long, h265_es,
-           h265_b, h265_main10]
+    raw = [h264_es, h264_b, h264_slices, h264_422, h264_long,
+           h264_interlaced, h264_444, h265_es, h265_b, h265_main10,
+           h265_main12, h265_tiles]
     containers = [h264_bf0, h265_bf0]
     for src, codec, stem in ((h264_bf0, "h264", "h264_bf0"),
                              (h265_bf0, "h265", "h265_bf0")):
@@ -105,6 +124,24 @@ def main():
             dst = os.path.join(out, f"{stem}.{ext}")
             remux(ff, src, dst, ["-f", fmt])
             containers.append(dst)
+    h264_frag = os.path.join(out, "h264_bf0-frag.mp4")
+    remux(ff, h264_bf0, h264_frag, ["-movflags", "frag_keyframe+empty_moov"])
+    containers.append(h264_frag)
+    h264_m2ts = os.path.join(out, "h264_bf0.m2ts")
+    remux(ff, h264_bf0, h264_m2ts,
+          ["-f", "mpegts", "-mpegts_m2ts_mode", "1"])
+    containers.append(h264_m2ts)
+    h265_frag = os.path.join(out, "h265_bf0-frag.mp4")
+    remux(ff, h265_bf0, h265_frag, ["-movflags", "frag_keyframe+empty_moov"])
+    containers.append(h265_frag)
+    for raw_path, stem in ((h264_interlaced, "h264_interlaced"),
+                           (h264_444, "h264_444"),
+                           (h265_main10, "h265_main10"),
+                           (h265_main12, "h265_main12"),
+                           (h265_tiles, "h265_tiles")):
+        dst = os.path.join(out, f"{stem}.mkv")
+        remux(ff, raw_path, dst, ["-f", "matroska"])
+        containers.append(dst)
 
     for path in raw:
         name = os.path.basename(path)

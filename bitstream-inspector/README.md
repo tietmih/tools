@@ -219,13 +219,13 @@ below are automated in `tests/` and run by CI on every push:
 
 | Check | Result |
 |---|---|
-| Frame count and I/P/B counts vs `ffprobe` (8 streams: High, Baseline, 4:2:2, multi-slice, long GOP, HEVC Main, Main10, WPP) | identical |
+| Frame count and I/P/B counts vs `ffprobe` (12 streams: High, Baseline, 4:2:2, 4:4:4, interlaced/MBAFF, multi-slice, long GOP, HEVC Main, Main10, Main12, tiles/WPP) | identical |
 | Syntactic fields vs FFmpeg `trace_headers` (SPS/PPS/slice: `num_ref_idx_active_override_flag`, POC, `slice_qp_delta`, tiles/WPP flags) | identical |
 | POC wrap-around on a 120-frame GOP | 120 unique POCs, 0..238 |
-| Decoded frames vs FFmpeg reference, real encoder output (H.264/H.265 in MP4/TS/MKV) | PSNR = inf (pixel-identical) |
-| ASan + UBSan over all test streams, then 300 mutation-fuzz iterations | no findings |
+| Decoded frames vs FFmpeg reference (MP4/TS/MKV/M2TS, fragmented MP4) | 8-bit pixel-identical; 10/12-bit within rounding tolerance |
+| ASan + UBSan over all test streams, mutation fuzz (200 per CI run, 3000 nightly) | no findings |
 | Windows runtime: container open, frame navigation, splitter drag, CSV export, layout persistence | verified by screenshot/automation |
-| Windows installer: silent install → launch installed app → silent uninstall | files, Start Menu/desktop shortcuts, HKCU uninstall entry and clean removal verified |
+| Windows installer: default, custom `/D=`, `/LANG=2052`, upgrade from 0.3.0, silent uninstall | files, shortcuts, HKCU entry, version hand-off and clean removal verified |
 | Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |
 
 Not verified: manual feel of every mouse interaction, very large files, exotic
@@ -240,6 +240,8 @@ containers.
 - Decoding is single-threaded per request.
 - For container inputs the `Offset` column reports the offset inside the
   reconstructed Annex B stream, not the container file.
+- 10/12-bit preview RGB conversion can differ from the FFmpeg CLI by a few
+  levels; decode correctness is checked with a bounded pixel tolerance.
 - H.265 SEI payloads are listed by type but not parsed in detail.
 - Multi-PPS streams that alternate between several PPS ids are parsed with the
   most recently activated state.

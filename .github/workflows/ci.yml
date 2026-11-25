@@ -2,7 +2,35 @@ name: CI
 
 on:
   push:
+    tags-ignore:
+      - "**"
+    paths:
+      - "*/ci/**"
+      - "*/src/**"
+      - "*/tests/**"
+      - "*/tools/**"
+      - "*/scripts/**"
+      - "*/installer/**"
+      - "*/res/**"
+      - "*/third_party/**"
+      - "*/CMakeLists.txt"
+      - ".github/workflows/**"
+      - ".github/tools.json"
+      - "scripts/**"
   pull_request:
+    paths:
+      - "*/ci/**"
+      - "*/src/**"
+      - "*/tests/**"
+      - "*/tools/**"
+      - "*/scripts/**"
+      - "*/installer/**"
+      - "*/res/**"
+      - "*/third_party/**"
+      - "*/CMakeLists.txt"
+      - ".github/workflows/**"
+      - ".github/tools.json"
+      - "scripts/**"
   workflow_dispatch:
 
 concurrency:
@@ -24,62 +52,31 @@ jobs:
       runtime: ${{ steps.list.outputs.runtime }}
       msvc: ${{ steps.list.outputs.msvc }}
       coverage: ${{ steps.list.outputs.coverage }}
+      has_runtime: ${{ steps.list.outputs.has_runtime }}
+      has_msvc: ${{ steps.list.outputs.has_msvc }}
+      has_coverage: ${{ steps.list.outputs.has_coverage }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - id: list
         run: |
-          jq -c '[.tools[] | select(.linux)]' .github/tools.json > "$RUNNER_TEMP/linux.json"
-          jq -c '[.tools[] | select(.arm64)]' .github/tools.json > "$RUNNER_TEMP/arm64.json"
-          jq -c '[.tools[] | select(.windows)]' .github/tools.json > "$RUNNER_TEMP/windows.json"
-          jq -c '[.tools[] | select(.runtime)]' .github/tools.json > "$RUNNER_TEMP/runtime.json"
-          jq -c '[.tools[] | select(.msvc)]' .github/tools.json > "$RUNNER_TEMP/msvc.json"
-          jq -c '[.tools[] | select(.coverage)]' .github/tools.json > "$RUNNER_TEMP/coverage.json"
+          jq -c '[.tools[] | select(.linux)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/linux.json"
+          jq -c '[.tools[] | select(.arm64)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/arm64.json"
+          jq -c '[.tools[] | select(.windows)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/windows.json"
+          jq -c '[.tools[] | select(.runtime)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/runtime.json"
+          jq -c '[.tools[] | select(.msvc)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/msvc.json"
+          jq -c '[.tools[] | select(.coverage)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/coverage.json"
           for name in linux arm64 windows runtime msvc coverage; do
             echo "$name=$(cat "$RUNNER_TEMP/$name.json")" >> "$GITHUB_OUTPUT"
           done
-
-  repo-checks:
-    name: repository checks
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Install linters
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends shellcheck
-          curl -fsSL -o "$RUNNER_TEMP/actionlint.tgz" \
-            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
-          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tgz" |
-            sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
-      - name: Bilingual documentation
-        run: python3 scripts/check_bilingual.py
-      - name: Documentation links
-        run: python3 scripts/check_links.py
-      - name: Version consistency
-        run: |
-          while IFS= read -r tool; do
-            if [ -x "$tool/ci/check-version.sh" ]; then
-              bash "$tool/ci/check-version.sh"
+          for name in runtime msvc coverage; do
+            if jq -e 'length > 0 and (.[0].name != "(none)")' "$RUNNER_TEMP/$name.json" >/dev/null; then
+              echo "has_$name=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "has_$name=false" >> "$GITHUB_OUTPUT"
             fi
-          done < <(jq -r '.tools[].name' .github/tools.json)
-      - name: Shell scripts
-        run: |
-          mapfile -t scripts < <(git ls-files '*.sh')
-          if [ ${#scripts[@]} -gt 0 ]; then
-            shellcheck "${scripts[@]}"
-          fi
-      - name: Python syntax
-        run: |
-          mapfile -t files < <(git ls-files '*.py')
-          if [ ${#files[@]} -gt 0 ]; then
-            python3 -m py_compile "${files[@]}"
-          fi
-      - name: GitHub Actions syntax
-        run: |
-          # shellcheck disable=SC2086
-          "$RUNNER_TEMP/actionlint"
+          done
 
   linux:
     name: ${{ matrix.name }}
@@ -123,6 +120,7 @@ jobs:
   windows-runtime:
     name: ${{ matrix.name }} / windows runtime
     needs: [discover, linux, windows]
+    if: needs.discover.outputs.has_runtime == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -131,6 +129,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ${{ matrix.name }}-windows
@@ -145,6 +145,8 @@ jobs:
           path: installer
       - name: Native Windows smoke test
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           ./${{ matrix.name }}/ci/windows-smoke.ps1 `
             -Payload "$env:GITHUB_WORKSPACE\payload" `
@@ -154,6 +156,7 @@ jobs:
   msvc:
     name: ${{ matrix.name }} / msvc
     needs: discover
+    if: needs.discover.outputs.has_msvc == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -162,6 +165,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Build with MSVC and run unit tests
         shell: pwsh
         run: ./${{ matrix.name }}/ci/msvc.ps1
@@ -169,6 +174,7 @@ jobs:
   coverage:
     name: ${{ matrix.name }} / coverage
     needs: discover
+    if: needs.discover.outputs.has_coverage == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -177,10 +183,12 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg gcovr
+          sudo apt-get install -y --no-install-recommends ffmpeg gcovr nasm
       - name: Restore host FFmpeg
         id: host-ffmpeg
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -206,3 +214,4 @@ jobs:
           name: ${{ matrix.name }}-coverage
           path: ${{ matrix.name }}/build-deps/coverage
           if-no-files-found: error
+          retention-days: 14

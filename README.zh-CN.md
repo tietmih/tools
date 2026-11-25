@@ -48,9 +48,13 @@
 
 | 工作流 | 触发条件 | 内容 |
 |---|---|---|
-| `ci.yml` | 每次推送/PR | 从 `.github/tools.json` 自动发现工具；Linux x64/arm64 回归、ASan/UBSan 与变异 fuzz、Windows 交叉构建与安装包/便携 ZIP、原生 Windows GUI/安装器冒烟、MSVC 构建、覆盖率，以及仓库检查（双语文档、链接、版本、shellcheck、actionlint、Python 语法） |
-| `release.yml` | tag `<tool>-v*` 或手动触发 | 同样的测试、版本与发布说明校验，然后发布 GitHub Release；手动触发可传 `publish: false` 做 dry-run |
+| `ci.yml` | 代码和工作流变更 | 从 `.github/tools.json` 自动发现工具；Linux x64/arm64 回归、ASan/UBSan 与变异 fuzz、Windows 交叉构建与安装包/便携 ZIP、原生 Windows GUI/安装器冒烟、MSVC 构建、覆盖率。忽略 tag 和纯文档变更 |
+| `repo-checks.yml` | 每次推送/PR | 双语文档配对、链接/锚点、版本字面量、shellcheck、Python 语法、actionlint |
+| `release.yml` | tag `<tool>-v*` 或手动触发 | 版本/说明校验、测试、构建、provenance 证明和 GitHub Release；手动触发可传 `publish: false` 做 dry-run |
 | `dependency-check.yml` | 每周或手动触发 | 比较固定依赖与上游版本，创建跟踪 issue，报告 runner 工具链 |
+| `nightly.yml` | 每天或手动触发 | ASan/UBSan 构建与 3000 轮变异 fuzz |
+
+工具约定、缓存、发布流程和本地复现详见 [docs/ci.zh-CN.md](docs/ci.zh-CN.md)。
 
 - 推送 `<tool>-v<version>` tag 会自动发布；除非 Actions 不可用，否则不要手工创建
   Release。

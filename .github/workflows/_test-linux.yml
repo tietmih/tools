@@ -29,6 +29,7 @@ permissions:
 jobs:
   test:
     name: linux ${{ inputs.artifact_suffix }}
+    if: inputs.tool != '(none)'
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     env:
@@ -39,10 +40,14 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Install test dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg ccache
+          if [ "$(uname -m)" = "x86_64" ]; then
+            sudo apt-get install -y --no-install-recommends nasm
+          fi
       - name: Restore host FFmpeg
         id: host-ffmpeg
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -86,4 +91,7 @@ jobs:
             ${{ inputs.tool }}/build-deps/vectors/*.mp4
             ${{ inputs.tool }}/build-deps/vectors/*.ts
             ${{ inputs.tool }}/build-deps/vectors/*.mkv
+            ${{ inputs.tool }}/build-deps/vectors/expected.json
+            ${{ inputs.tool }}/build-deps/vectors/*.ref.ppm
           if-no-files-found: error
+          retention-days: 14

@@ -27,7 +27,6 @@ if [ ! -f ffbuild/config.mak ]; then
         --prefix="$PREFIX" \
         --enable-shared --disable-static \
         --disable-doc --disable-debug \
-        --disable-x86asm \
         --disable-everything \
         --enable-ffmpeg --enable-ffprobe \
         --enable-avformat --enable-avcodec --enable-avutil --enable-swscale \

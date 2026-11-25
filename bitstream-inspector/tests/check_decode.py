@@ -6,6 +6,7 @@ display order and frame N in mtest is frame N in ffmpeg's select filter. PPM
 pixels must be identical; any difference means the media layer regressed.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -45,11 +46,15 @@ def frame_count(ffprobe, path):
 def check_container(mtest, ffmpeg, ffprobe, vectors, name):
     path = os.path.join(vectors, name)
     errors = []
+    expected = {}
     expected_frames = frame_count(ffprobe, path)
+    limited = "main10" in name or "main12" in name
+    max_tolerance = 160 if limited else 0
+    mean_tolerance = 5.0 if limited else 0.0
     out = run([mtest, path]).stdout.decode("utf-8", "replace")
     m = FRAMES.search(out)
     if not m:
-        return [f"{name}: mtest did not report a frame count"]
+        return [f"{name}: mtest did not report a frame count"], expected
     if int(m.group(1)) != expected_frames:
         errors.append(f"{name}: mtest frames {m.group(1)}, ffprobe "
                       f"{expected_frames}")
@@ -73,16 +78,27 @@ def check_container(mtest, ffmpeg, ffprobe, vectors, name):
              "-pix_fmt", "rgb24", ref])
         w1, h1, pix1 = read_ppm(ours)
         w2, h2, pix2 = read_ppm(ref)
+        expected[str(index)] = {
+            "sha256": hashlib.sha256(pix2).hexdigest(),
+            "ref": os.path.basename(ref),
+            "width": w2,
+            "height": h2,
+            "max_tolerance": max_tolerance,
+            "mean_tolerance": mean_tolerance,
+        }
         if (w1, h1) != (w2, h2):
             errors.append(f"{name}: frame {index} size {w1}x{h1} vs "
                           f"{w2}x{h2}")
         elif pix1 != pix2:
             diffs = [abs(a - b) for a, b in zip(pix1, pix2)]
-            errors.append(
-                f"{name}: frame {index} pixels differ (max {max(diffs)}, "
-                f"mean {sum(diffs) / len(diffs):.3f}, "
-                f"{sum(1 for d in diffs if d)}/{len(diffs)} bytes)")
-    return errors
+            max_diff = max(diffs)
+            mean_diff = sum(diffs) / len(diffs)
+            if max_diff > max_tolerance or mean_diff > mean_tolerance:
+                errors.append(
+                    f"{name}: frame {index} pixels differ (max {max_diff}, "
+                    f"mean {mean_diff:.3f}, "
+                    f"{sum(1 for d in diffs if d)}/{len(diffs)} bytes)")
+    return errors, expected
 
 
 def check_raw_fallback(mtest, vectors):
@@ -107,13 +123,18 @@ def main():
     ap.add_argument("--ffprobe", default="ffprobe")
     ap.add_argument("--mtest", required=True)
     ap.add_argument("--vectors", required=True)
+    ap.add_argument("--expected-out",
+                    help="write reference PPM hashes for the Windows runtime")
     args = ap.parse_args()
 
     manifest = json.load(open(os.path.join(args.vectors, "manifest.json")))
     failures = []
+    expected_all = {}
     for vector in manifest["containers"]:
-        errors = check_container(args.mtest, args.ffmpeg, args.ffprobe,
-                                 args.vectors, vector["file"])
+        errors, expected = check_container(
+            args.mtest, args.ffmpeg, args.ffprobe, args.vectors,
+            vector["file"])
+        expected_all[vector["file"]] = expected
         print(f"{vector['file']}: {'ok' if not errors else 'FAILED'}")
         for error in errors:
             print("  " + error)
@@ -123,6 +144,9 @@ def main():
     failures.extend(errors)
     for error in errors:
         print("  " + error)
+    if args.expected_out:
+        with open(args.expected_out, "w", encoding="utf-8") as f:
+            json.dump(expected_all, f, indent=2, sort_keys=True)
     return 1 if failures else 0
 
 

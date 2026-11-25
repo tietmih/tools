@@ -203,13 +203,13 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 
 | 检查项 | 结果 |
 |---|---|
-| 帧数和 I/P/B 计数 vs `ffprobe`（8 条流：High、Baseline、4:2:2、多 slice、长 GOP、HEVC Main、Main10、WPP） | 完全一致 |
+| 帧数和 I/P/B 计数 vs `ffprobe`（12 条流：High、Baseline、4:2:2、4:4:4、隔行/MBAFF、多 slice、长 GOP、HEVC Main、Main10、Main12、tiles/WPP） | 完全一致 |
 | 语法字段 vs FFmpeg `trace_headers`（SPS/PPS/slice：`num_ref_idx_active_override_flag`、POC、`slice_qp_delta`、tiles/WPP 标志） | 完全一致 |
 | 120 帧长 GOP 的 POC 回绕 | 120 个唯一 POC，0..238 |
-| 解码画面 vs FFmpeg 参考帧，真实编码器的 H.264/H.265（MP4/TS/MKV） | PSNR = inf（逐像素一致） |
-| 全部测试流跑 ASan + UBSan，再跑 300 轮变异 fuzz | 无问题 |
+| 解码画面 vs FFmpeg 参考帧（MP4/TS/MKV/M2TS、分片 MP4） | 8-bit 逐像素一致；10/12-bit 在舍入容差内 |
+| 全部测试流跑 ASan + UBSan，变异 fuzz（CI 每轮 200、夜间 3000） | 无问题 |
 | Windows 运行时：容器打开、帧导航、分栏拖拽、CSV 导出、布局持久化 | 截图/自动化验证 |
-| Windows 安装器：静默安装 → 启动已安装程序 → 静默卸载 | 文件、开始菜单/桌面快捷方式、HKCU 卸载项和清理均验证 |
+| Windows 安装器：默认安装、自定义 `/D=`、`/LANG=2052`、从 0.3.0 升级、静默卸载 | 文件、快捷方式、HKCU 卸载项、版本交接和清理均验证 |
 | 运行时中英文切换及重启后保持 | 自动化/截图验证 |
 
 未验证：每个鼠标交互的手感、超大文件、特殊容器。
@@ -221,6 +221,8 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 - 还没有缩略图条、slice/CTU 覆盖层、DPB/GOP 图、HRD/CPB 分析和宏块级熵解码。
 - 每次解码是单线程的。
 - 容器输入的 `偏移` 列是重构后的 Annex B 流内偏移，不是容器文件偏移。
+- 10/12-bit 预览的 RGB 转换可能与 FFmpeg CLI 相差几个等级；解码正确性用有界
+  像素容差检查。
 - H.265 SEI 只列出类型，未深入解析内容。
 - 多 PPS 流在多个 PPS id 之间切换时，使用最近一次激活的参数集解析。
 

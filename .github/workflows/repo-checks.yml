@@ -1,0 +1,59 @@
+name: repository checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: repo-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: repository checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install linters
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tgz" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tgz" |
+            sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+      - name: Bilingual documentation
+        run: python3 scripts/check_bilingual.py
+      - name: Documentation links
+        run: python3 scripts/check_links.py
+      - name: Version consistency
+        run: |
+          while IFS= read -r tool; do
+            if [ -x "$tool/ci/check-version.sh" ]; then
+              bash "$tool/ci/check-version.sh"
+            fi
+          done < <(jq -r '.tools[].name' .github/tools.json)
+      - name: Shell scripts
+        run: |
+          mapfile -t scripts < <(git ls-files '*.sh')
+          if [ ${#scripts[@]} -gt 0 ]; then
+            shellcheck "${scripts[@]}"
+          fi
+      - name: Python syntax
+        run: |
+          mapfile -t files < <(git ls-files '*.py')
+          if [ ${#files[@]} -gt 0 ]; then
+            python3 -m py_compile "${files[@]}"
+          fi
+      - name: GitHub Actions syntax
+        run: |
+          # shellcheck disable=SC2086
+          "$RUNNER_TEMP/actionlint"
