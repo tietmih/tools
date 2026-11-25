@@ -68,7 +68,7 @@ jobs:
               echo '[{"name":"(none)","os":"windows-2022"}]' > "$RUNNER_TEMP/$kind.json"
             fi
           done
-          jq -c '[.tools[] | select(.coverage)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/coverage.json"
+          jq -c '[.tools[] | select(.coverage) | {name: .name}] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/coverage.json"
           for name in linux arm64 windows runtime msvc coverage; do
             echo "$name=$(cat "$RUNNER_TEMP/$name.json")" >> "$GITHUB_OUTPUT"
           done
@@ -201,7 +201,7 @@ jobs:
   coverage:
     # Static name: a skipped job cannot resolve matrix context, and coverage is
     # intentionally skipped on pull requests.
-    name: coverage
+    name: ${{ matrix.name }} / coverage
     needs: [discover, deps]
     if: needs.discover.outputs.has_coverage == 'true'
     strategy:
