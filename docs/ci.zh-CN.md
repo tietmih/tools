@@ -62,8 +62,9 @@ gh workflow run release.yml --ref main \
   -f tag=<tool>-v<version> -f publish=false
 ```
 
-Release 附件是 Windows 安装包、便携 ZIP 和 `SHA256SUMS`；正文包含中英两种语言和
-校验和块。publish job 会为两个附件生成构建 provenance。
+Release 附件是 Windows 安装包、便携 ZIP、CycloneDX 1.6 SBOM（`*.cdx.json`）和
+`SHA256SUMS`；正文包含中英两种语言和校验和块。publish job 会为三个附件生成构建
+provenance。
 
 ## 本地复现
 
@@ -89,7 +90,6 @@ bash ci/coverage.sh         # 需要 gcovr
   必需检查和强制 PR 按直接推送流程有意关闭；直接推送时 CI 仍是建议性的。
 - **Windows 2025 / ARM64 Windows**：目前只在 `windows-2022` x64 上验证。
 - **可复现构建**：没有对安装包做两次构建的哈希对比。
-- **SBOM**：已生成构建 provenance，但没有 CycloneDX/SPDX SBOM。
 - **覆盖率报告**：已强制 60% 行覆盖率阈值，但不会把报告评论到 PR。
 - **GUI 自动化**：覆盖启动、语言切换、正常退出、便携 ZIP 和安装器场景；不覆盖
   拖拽分栏和所有对话框。

@@ -66,9 +66,10 @@ gh workflow run release.yml --ref main \
   -f tag=<tool>-v<version> -f publish=false
 ```
 
-Release assets are the Windows installer, portable ZIP and `SHA256SUMS`; the
-body contains both languages and the checksum block. The publish job attests
-build provenance for both artifacts.
+Release assets are the Windows installer, portable ZIP, a CycloneDX 1.6 SBOM
+(`*.cdx.json`) and `SHA256SUMS`; the body contains both languages and the
+checksum block. The publish job attests build provenance for all three
+artifacts.
 
 ## Local reproduction
 
@@ -97,8 +98,6 @@ Items that need credentials, a policy decision or a larger follow-up:
   advisory for direct pushes.
 - **Windows 2025 / ARM64 Windows**: validation runs on `windows-2022` x64.
 - **Reproducible builds**: no double-build hash comparison for the installer.
-- **SBOM**: build provenance is attested, but no CycloneDX/SPDX SBOM is
-  generated.
 - **Coverage reporting**: the line threshold is enforced (60%), but the report
   is not posted as a PR comment.
 - **GUI automation**: startup, language switching, clean exit, portable ZIP

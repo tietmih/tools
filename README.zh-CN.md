@@ -99,7 +99,8 @@
   `bitstream-inspector-v0.3.0`。不要使用裸版本号，避免多个工具冲突。
 - **Release**：每个推送的 tag 必须有同名 GitHub Release；只有 tag 没有 Release
   视为未完成发布。
-- **附件**：附带构建产物（Windows 安装包，可选便携压缩包）和 `SHA256SUMS`。
+- **附件**：附带构建产物（Windows 安装包，可选便携压缩包）、CycloneDX SBOM 和
+  `SHA256SUMS`。
   二进制只放在 Release，绝不进 git——`dist/` 已被忽略。校验和文件使用纯文件名，
   这样在下载目录里可以直接 `sha256sum -c SHA256SUMS`。
 - **说明**：发布说明同时提供英文和简体中文，包含用户可见变化、已做验证、已知限制

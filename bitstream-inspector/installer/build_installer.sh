@@ -82,6 +82,17 @@ fi
 rm -f "$PORTABLE"
 ( cd "$STAGE" && zip -qr "$PORTABLE" . )
 
-( cd "$DIST" && sha256sum "$(basename "$OUT")" "$(basename "$PORTABLE")" > SHA256SUMS )
-ls -lh "$OUT" "$PORTABLE" "$DIST/SHA256SUMS"
+SBOM="$DIST/BitstreamInspector-${VERSION}-win64-sbom.cdx.json"
+python3 -I "$PROJECT/scripts/make_sbom.py" \
+    --version "$VERSION" \
+    --dist "$DIST" \
+    --dll-dir "$STAGE" \
+    --deps "$PROJECT/ci/deps.env" \
+    --build-info "$PROJECT/third_party/ffmpeg-win64/BUILD-INFO.txt" \
+    --makensis "$MAKENSIS" \
+    --out "$SBOM"
+
+( cd "$DIST" && sha256sum "$(basename "$OUT")" "$(basename "$PORTABLE")" \
+    "$(basename "$SBOM")" > SHA256SUMS )
+ls -lh "$OUT" "$PORTABLE" "$SBOM" "$DIST/SHA256SUMS"
 echo "installer ready: $OUT"

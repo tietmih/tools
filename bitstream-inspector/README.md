@@ -86,8 +86,8 @@ custom install directory).
 
 The tool is released independently from the rest of the repository. The current
 version is **0.3.1**; tags use the form `bitstream-inspector-v0.3.1` and every
-tag has a matching GitHub Release with the Windows installer, portable ZIP and
-`SHA256SUMS` attached. Releases are built, tested and published by the CI
+tag has a matching GitHub Release with the Windows installer, portable ZIP,
+CycloneDX SBOM and `SHA256SUMS` attached. Releases are built, tested and published by the CI
 workflow. Release notes are provided in English and Simplified Chinese.
 
 See [CHANGELOG.md](CHANGELOG.md) for the change history and

@@ -112,7 +112,7 @@ Rules:
 - **Release**: every pushed tag must have a matching GitHub Release with the
   same name. A tag without a release is not a finished release.
 - **Assets**: attach the tool's built packages (Windows installer; optional
-  portable archive) plus a `SHA256SUMS` file. Binary artifacts live only in the
+  portable archive), a CycloneDX SBOM and a `SHA256SUMS` file. Binary artifacts live only in the
   Release, never in git — `dist/` is ignored. Checksums list bare file names so
   `sha256sum -c SHA256SUMS` works in the download directory.
 - **Notes**: list user-visible changes, verification performed, known

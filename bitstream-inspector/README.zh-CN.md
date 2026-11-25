@@ -76,7 +76,8 @@ dist/BitstreamInspector-0.3.1-win64-portable.zip
 
 本工具独立于仓库中的其他工具发布。当前版本 **0.3.1**，tag 格式为
 `bitstream-inspector-v0.3.1`；每个 tag 都有对应的 GitHub Release，附件包含
-Windows 安装包、便携 ZIP 和 `SHA256SUMS`，发布说明提供英文和简体中文两个版本。
+Windows 安装包、便携 ZIP、CycloneDX SBOM 和 `SHA256SUMS`，发布说明提供英文和
+简体中文两个版本。
 发布包由 CI 工作流构建、测试并自动发布。
 
 变更历史见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)，各版本发布说明见
