@@ -288,6 +288,12 @@ if ($exitCode -eq 2) {
     if ($running.HasExited) {
         throw "running app exited during uninstall"
     }
+    # The NSIS uninstaller relaunches itself from %TEMP%; registry cleanup can
+    # land slightly after the launcher exits, so poll instead of asserting once.
+    $deadline = (Get-Date).AddSeconds(30)
+    while ((Test-Path $regPath) -and ((Get-Date) -lt $deadline)) {
+        Start-Sleep -Milliseconds 500
+    }
     if (Test-Path $regPath) {
         throw "uninstaller kept the registry entry after a successful uninstall"
     }
