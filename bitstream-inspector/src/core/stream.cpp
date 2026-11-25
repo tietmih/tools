@@ -634,9 +634,9 @@ std::vector<SyntaxNode> Stream::syntaxTree(size_t nal_index) const
             parseH264Sei(rbsp, &sb, summary);
         } else if (type == 9) {
             Section sec(&sb, "access_unit_delimiter_rbsp");
-            uint64_t p = br.pos();
+            uint64_t aud_pos = br.pos();
             uint32_t v = br.u(3);
-            sb.addUInt("primary_pic_type", v, p, 3);
+            sb.addUInt("primary_pic_type", v, aud_pos, 3);
         } else if ((type >= 1 && type <= 5) || type == 20) {
             H264State state = h264_;
             if (e.sps_version >= 0 &&
@@ -671,9 +671,9 @@ std::vector<SyntaxNode> Stream::syntaxTree(size_t nal_index) const
             parseH265Pps(br, &sb, pps);
         } else if (type == 35) {
             Section sec(&sb, "access_unit_delimiter_rbsp");
-            uint64_t p = br.pos();
+            uint64_t aud_pos = br.pos();
             uint32_t v = br.u(3);
-            sb.addUInt("pic_type", v, p, 3);
+            sb.addUInt("pic_type", v, aud_pos, 3);
         } else if (type <= 31) {
             H265State state = h265_;
             if (e.sps_version >= 0 &&

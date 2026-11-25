@@ -17,6 +17,7 @@ add_library(bs_core STATIC
 target_include_directories(bs_core PUBLIC src)
 if(MSVC)
     target_compile_options(bs_core PRIVATE /W4 /WX)
+    target_compile_definitions(bs_core PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(bs_core PRIVATE -Wall -Wextra)
 endif()

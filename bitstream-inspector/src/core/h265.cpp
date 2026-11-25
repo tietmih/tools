@@ -737,7 +737,7 @@ void parseH265SliceSegmentHeader(BitReader &br, SyntaxBuilder *sb, H265State &st
                                               true, "st_ref_pic_set( num_st_rps )");
             } else if (sps.st_rps.size() > 1) {
                 int bits = 1;
-                while ((1u << bits) < sps.st_rps.size())
+                while ((size_t{1} << bits) < sps.st_rps.size())
                     bits++;
                 int idx = static_cast<int>(r.u(bits, "short_term_ref_pic_set_idx"));
                 if (idx >= 0 && idx < static_cast<int>(sps.st_rps.size()))
@@ -781,7 +781,7 @@ void parseH265SliceSegmentHeader(BitReader &br, SyntaxBuilder *sb, H265State &st
                     r.flag("delta_poc_msb_present_flag", msb_present);
                     if (msb_present)
                         r.ue("delta_poc_msb_cycle_lt");
-                    lt_used.push_back(used ? 1 : 0);
+                    lt_used.push_back(static_cast<uint8_t>(used));
                 }
             }
             int num_pic_total_curr_lt = num_pic_total_curr;
