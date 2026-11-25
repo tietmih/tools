@@ -81,10 +81,10 @@ bash ci/coverage.sh         # 需要 gcovr
 
 以下项目需要证书、策略决定或后续较大的改动：
 
-- **代码签名**：安装包和可执行文件未做 Authenticode 签名；自动化前需要证书、
-  密码和时间戳服务。
-- **分支保护**：`main` 还没有必需检查、防 force-push 或 PR 策略；允许直接推送，
-  CI 目前是建议性的。这需要仓库策略决定。
+- **代码签名**：维护者于 2026-11-25 决定暂缓。安装包和可执行文件未做
+  Authenticode 签名；自动化前需要证书或 OSS 签名服务账号。
+- **分支保护**：`main` 现在拒绝 force-push 和删除分支（管理员同样受限）。
+  必需检查和强制 PR 按直接推送流程有意关闭；直接推送时 CI 仍是建议性的。
 - **Windows 2025 / ARM64 Windows**：目前只在 `windows-2022` x64 上验证。
 - **可复现构建**：没有对安装包做两次构建的哈希对比。
 - **SBOM**：已生成构建 provenance，但没有 CycloneDX/SPDX SBOM。
@@ -97,4 +97,5 @@ bash ci/coverage.sh         # 需要 gcovr
   生成；MBAFF/隔行已覆盖。
 - **效率**：`release.yml` 在 tag 上会重新构建 FFmpeg（缓存按分支隔离）；ccache
   文件按提交累积。集中构建 FFmpeg 和滚动 ccache key 是后续优化。
-- **发布通道**：只发布带 tag 的稳定版，没有 nightly/pre-release 通道。
+- **发布通道**：2026-11-25 决定只发布带 tag 的稳定版。`nightly.yml` 只跑扩展
+  fuzz，不构建或发布 nightly 安装包。

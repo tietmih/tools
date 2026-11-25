@@ -86,12 +86,13 @@ bash ci/coverage.sh         # needs gcovr
 
 Items that need credentials, a policy decision or a larger follow-up:
 
-- **Code signing**: the installer and executables are not Authenticode-signed.
-  A certificate, password and timestamp service are required before signing
-  can be automated.
-- **Branch protection**: `main` has no required checks, force-push protection
-  or PR policy yet; direct pushes are allowed and CI is advisory. This is a
-  repository-policy decision.
+- **Code signing**: deferred by the maintainer on 2026-11-25. The installer
+  and executables are not Authenticode-signed; a certificate or an OSS signing
+  service account is required before this can be automated.
+- **Branch protection**: `main` now rejects force-pushes and branch deletion,
+  including by administrators. Required checks and mandatory pull requests are
+  intentionally disabled to keep the direct-push workflow; CI remains
+  advisory for direct pushes.
 - **Windows 2025 / ARM64 Windows**: validation runs on `windows-2022` x64.
 - **Reproducible builds**: no double-build hash comparison for the installer.
 - **SBOM**: build provenance is attested, but no CycloneDX/SPDX SBOM is
@@ -110,5 +111,6 @@ Items that need credentials, a policy decision or a larger follow-up:
 - **Efficiency**: `release.yml` rebuilds FFmpeg on tags because cache scopes
   are per branch; ccache files accumulate per commit. Centralizing the FFmpeg
   build and rolling the ccache key are follow-ups.
-- **Release channels**: only tagged stable releases are published; there is no
-  nightly/pre-release channel.
+- **Release channels**: by decision on 2026-11-25 only tagged stable releases
+  are published. `nightly.yml` runs the extended fuzz suite; it does not build
+  or publish nightly packages.
