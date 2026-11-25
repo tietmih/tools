@@ -56,7 +56,7 @@ GitHub Actions is the release path for every tool:
 
 | Workflow | Trigger | What it runs |
 |---|---|---|
-| `ci.yml` | code changes and workflow changes | discovers tools from `.github/tools.json`; Linux x64 and arm64 regression tests, ASan/UBSan and mutation fuzz, Windows cross-build plus installer and portable ZIP, native Windows GUI/installer smoke test and MSVC build on `windows-2022` and `windows-2025`, plus coverage. Ignores tags and documentation-only changes |
+| `ci.yml` | code changes and workflow changes | discovers tools from `.github/tools.json`; Linux x64 and arm64 regression tests, ASan/UBSan and mutation fuzz, Windows cross-build plus installer and portable ZIP, native Windows GUI/installer smoke test and MSVC build on `windows-2022` and `windows-2025`, plus coverage. FFmpeg is built once per run in a shared `deps` job. Ignores tags and documentation-only changes |
 | `repo-checks.yml` | every push/PR | bilingual documentation pairs, link/anchor checks, version literals, shellcheck, markdownlint, Python syntax and actionlint |
 | `static-analysis.yml` | code changes | cppcheck and clang-tidy analyzer checks for the parser, media layer, CLI and tests |
 | `release.yml` | tag `<tool>-v*`, or manual dispatch | version/notes checks, tests, package build, provenance attestation and GitHub Release; manual dispatch accepts `publish: false` for a dry run |

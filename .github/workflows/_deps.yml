@@ -1,0 +1,100 @@
+name: dependencies
+
+on:
+  workflow_call:
+    inputs:
+      tool:
+        type: string
+        required: true
+      ref:
+        type: string
+        required: false
+        default: ""
+      build_host:
+        type: boolean
+        required: false
+        default: true
+      build_windows:
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    name: host ${{ matrix.arch }}
+    if: inputs.build_host && inputs.tool != '(none)'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg ccache
+          if [ "$(uname -m)" = "x86_64" ]; then
+            sudo apt-get install -y --no-install-recommends nasm
+          fi
+      - name: Restore host FFmpeg
+        id: host-ffmpeg
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ inputs.tool }}/build-deps/ffmpeg-host
+          key: ffmpeg-host-${{ runner.arch }}-${{ inputs.tool }}-${{ hashFiles(format('{0}/ci/deps.env', inputs.tool), format('{0}/ci/ffmpeg-host.sh', inputs.tool), format('{0}/scripts/build_ffmpeg_host.sh', inputs.tool)) }}
+      - name: Build host FFmpeg
+        if: steps.host-ffmpeg.outputs.cache-hit != 'true'
+        run: bash "${{ inputs.tool }}/ci/ffmpeg-host.sh"
+      - name: Verify host FFmpeg
+        run: test -f "${{ inputs.tool }}/build-deps/ffmpeg-host/include/libavformat/avformat.h"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ inputs.tool }}-ffmpeg-host-${{ matrix.arch }}
+          path: ${{ inputs.tool }}/build-deps/ffmpeg-host
+          if-no-files-found: error
+          retention-days: 2
+
+  windows:
+    name: windows ffmpeg
+    if: inputs.build_windows && inputs.tool != '(none)'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++-mingw-w64-x86-64 gcc-mingw-w64-x86-64 nasm
+      - name: Restore Windows FFmpeg
+        id: windows-ffmpeg
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ inputs.tool }}/third_party/ffmpeg-win64
+          key: ffmpeg-${{ inputs.tool }}-${{ hashFiles(format('{0}/ci/ffmpeg.sh', inputs.tool), format('{0}/ci/deps.env', inputs.tool), format('{0}/scripts/build_ffmpeg_mingw.sh', inputs.tool)) }}
+      - name: Build Windows FFmpeg
+        if: steps.windows-ffmpeg.outputs.cache-hit != 'true'
+        run: bash "${{ inputs.tool }}/ci/ffmpeg.sh"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ inputs.tool }}-ffmpeg-win64
+          path: ${{ inputs.tool }}/third_party/ffmpeg-win64
+          if-no-files-found: error
+          retention-days: 2

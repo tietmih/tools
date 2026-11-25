@@ -62,9 +62,22 @@ jobs:
             fi
           done
 
-  linux:
+  deps:
     name: ${{ matrix.name }}
     needs: discover
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.linux) }}
+    uses: ./.github/workflows/_deps.yml
+    with:
+      tool: ${{ matrix.name }}
+      build_host: true
+      build_windows: ${{ matrix.windows }}
+
+  linux:
+    name: ${{ matrix.name }}
+    needs: [discover, deps]
     strategy:
       fail-fast: false
       matrix:
@@ -75,10 +88,11 @@ jobs:
       runner: ubuntu-24.04
       artifact_suffix: x64
       upload_vectors: true
+      needs_deps: true
 
   arm64:
     name: ${{ matrix.name }}
-    needs: discover
+    needs: [discover, deps]
     strategy:
       fail-fast: false
       matrix:
@@ -89,10 +103,11 @@ jobs:
       runner: ubuntu-24.04-arm
       artifact_suffix: arm64
       upload_vectors: false
+      needs_deps: true
 
   windows:
     name: ${{ matrix.name }}
-    needs: discover
+    needs: [discover, deps]
     strategy:
       fail-fast: false
       matrix:
@@ -100,6 +115,7 @@ jobs:
     uses: ./.github/workflows/_build-windows.yml
     with:
       tool: ${{ matrix.name }}
+      needs_deps: true
 
   windows-runtime:
     name: ${{ matrix.name }} / windows runtime (${{ matrix.os }})
@@ -157,7 +173,7 @@ jobs:
 
   coverage:
     name: ${{ matrix.name }} / coverage
-    needs: discover
+    needs: [discover, deps]
     if: needs.discover.outputs.has_coverage == 'true'
     strategy:
       fail-fast: false
@@ -165,6 +181,9 @@ jobs:
         include: ${{ fromJSON(needs.discover.outputs.coverage) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -173,24 +192,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg gcovr nasm
-      - name: Restore host FFmpeg
-        id: host-ffmpeg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - name: Download host FFmpeg artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
+          name: ${{ matrix.name }}-ffmpeg-host-x64
           path: ${{ matrix.name }}/build-deps/ffmpeg-host
-          key: ffmpeg-host-${{ runner.arch }}-${{ matrix.name }}-${{ hashFiles(format('{0}/ci/deps.env', matrix.name), format('{0}/ci/ffmpeg-host.sh', matrix.name), format('{0}/scripts/build_ffmpeg_host.sh', matrix.name)) }}
-      - name: Verify host FFmpeg
-        id: host-check
-        run: |
-          prefix="${{ matrix.name }}/build-deps/ffmpeg-host"
-          if [ -f "$prefix/include/libavformat/avformat.h" ] &&
-             ls "$prefix"/lib/libavformat.so* >/dev/null 2>&1 &&
-             [ -x "$prefix/bin/ffmpeg" ] && [ -x "$prefix/bin/ffprobe" ]; then
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Build host FFmpeg
-        if: steps.host-ffmpeg.outputs.cache-hit != 'true' || steps.host-check.outputs.ok != 'true'
-        run: bash "${{ matrix.name }}/ci/ffmpeg-host.sh"
       - name: Collect coverage
         run: bash "${{ matrix.name }}/ci/coverage.sh"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -199,3 +205,23 @@ jobs:
           path: ${{ matrix.name }}/build-deps/coverage
           if-no-files-found: error
           retention-days: 14
+      - name: Summarize coverage
+        run: |
+          python3 scripts/coverage_summary.py \
+            "${{ matrix.name }}/build-deps/coverage/coverage.xml" \
+            --tool "${{ matrix.name }}" > coverage-summary.md
+          cat coverage-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment coverage on the pull request
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          marker="<!-- coverage-summary -->"
+          body=$(printf '%s\n\n%s' "$marker" "$(cat coverage-summary.md)")
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/comments" \
+            --paginate --jq '.[] | select(.body | startswith("<!-- coverage-summary -->")) | .id' | head -n1)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -f body="$body" >/dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/comments" -f body="$body" >/dev/null
+          fi

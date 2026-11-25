@@ -14,6 +14,10 @@ on:
         type: string
         required: false
         default: ""
+      needs_deps:
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -38,26 +42,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             g++-mingw-w64-x86-64 gcc-mingw-w64-x86-64 nasm nsis zip ccache
-      - name: Locate FFmpeg build hook
-        id: ffmpeg
-        run: |
-          if [ -f "${{ inputs.tool }}/ci/ffmpeg.sh" ]; then
-            key=$(sha256sum "${{ inputs.tool }}/ci/ffmpeg.sh" \
-                  "${{ inputs.tool }}/ci/deps.env" \
-                  "${{ inputs.tool }}/scripts/build_ffmpeg_mingw.sh" 2>/dev/null |
-                  sha256sum | cut -d' ' -f1)
-            echo "key=$key" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Download Windows FFmpeg artifact
+        if: inputs.needs_deps
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ${{ inputs.tool }}-ffmpeg-win64
+          path: ${{ inputs.tool }}/third_party/ffmpeg-win64
       - name: Restore FFmpeg build
         id: ffmpeg-cache
-        if: steps.ffmpeg.outputs.key != ''
+        if: '!inputs.needs_deps'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ inputs.tool }}/third_party/ffmpeg-win64
-          key: ffmpeg-${{ inputs.tool }}-${{ steps.ffmpeg.outputs.key }}
-      - name: Verify restored FFmpeg
+          key: ffmpeg-${{ inputs.tool }}-${{ hashFiles(format('{0}/ci/ffmpeg.sh', inputs.tool), format('{0}/ci/deps.env', inputs.tool), format('{0}/scripts/build_ffmpeg_mingw.sh', inputs.tool)) }}
+      - name: Verify FFmpeg
         id: ffmpeg-check
-        if: steps.ffmpeg.outputs.key != ''
         run: |
           prefix="${{ inputs.tool }}/third_party/ffmpeg-win64"
           if [ -f "$prefix/include/libavformat/avformat.h" ] &&
@@ -66,13 +65,16 @@ jobs:
             echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Build FFmpeg
-        if: steps.ffmpeg.outputs.key != '' && steps.ffmpeg-check.outputs.ok != 'true'
+        if: steps.ffmpeg-check.outputs.ok != 'true'
         run: bash "${{ inputs.tool }}/ci/ffmpeg.sh"
+      - name: ccache week
+        id: week
+        run: echo "value=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
       - name: Restore ccache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cache/ccache
-          key: ccache-windows-${{ inputs.tool }}-${{ github.sha }}
+          key: ccache-windows-${{ inputs.tool }}-${{ steps.week.outputs.value }}
           restore-keys: |
             ccache-windows-${{ inputs.tool }}-
       - name: Build GUI, CLI and installer

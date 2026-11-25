@@ -78,6 +78,17 @@ provenance。
   以及运行中卸载路径：要么卸载完成（映像文件处于 delete-pending），要么中止且
   文件和注册表保持完整；关闭程序后重试可成功卸载。
 
+## 缓存与共享依赖
+
+`_deps.yml` 每次运行只构建一次 FFmpeg（host x64/arm64，以及工具有 Windows
+目标时的 mingw 构建），并以短期 artifact 发布。Linux、ARM64、覆盖率和 Windows
+job 直接使用这些 artifact，不再各自构建 FFmpeg；缓存 key 保持不变，本地运行和
+手动触发仍可复用每周缓存。
+
+- ccache key 按周滚动（`<os>-<arch>-<tool>-<YYYY-Www>`），不再随每次提交增长。
+- 覆盖率 job 在 PR 上维护一条 sticky 评论（行/分支覆盖率和 60% 阈值），同一摘要
+  写入 workflow step summary，HTML/XML 报告作为 artifact 上传。
+
 ## 可复现构建
 
 在源码和工具链相同的前提下，Windows 打包步骤可复现：
@@ -120,7 +131,5 @@ bash ci/coverage.sh         # 需要 gcovr
   拖拽分栏和所有对话框。
 - **解析测试向量**：multi-PPS 切换、dependent slice segment 和 PAFF 场编码尚未
   生成；MBAFF/隔行已覆盖。
-- **效率**：`release.yml` 在 tag 上会重新构建 FFmpeg（缓存按分支隔离）；ccache
-  文件按提交累积。集中构建 FFmpeg 和滚动 ccache key 是后续优化。
 - **发布通道**：2026-11-25 决定只发布带 tag 的稳定版。`nightly.yml` 只跑扩展
   fuzz，不构建或发布 nightly 安装包。

@@ -7,7 +7,7 @@ GitHub Actions is the only build and release path. Workflows live in
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | push/PR touching a tool, `scripts/`, or a workflow | Discovers tools from `tools.json` and runs the Linux x64/arm64 suites, Windows cross-build, native Windows smoke test and MSVC build on `windows-2022` and `windows-2025`, plus coverage |
+| `ci.yml` | push/PR touching a tool, `scripts/`, or a workflow | Discovers tools from `tools.json`, builds FFmpeg once in a `deps` job, then runs the Linux x64/arm64 suites, Windows cross-build, native Windows smoke test and MSVC build on `windows-2022` and `windows-2025`, plus coverage |
 | `repo-checks.yml` | every push/PR | Bilingual doc pairing, link/anchor checks, version literals, shellcheck, markdownlint, Python syntax, actionlint |
 | `static-analysis.yml` | code changes | cppcheck and clang-tidy analyzer checks for the parser, media layer, CLI and unit tests |
 | `release.yml` | tag `<tool>-v<version>`, or manual dispatch | Validates the annotated tag, version and bilingual notes, re-runs tests, builds the package, attests provenance and publishes the GitHub Release. Manual dispatch accepts `publish: false` for a dry run |
@@ -86,6 +86,21 @@ The per-user uninstaller handles a running application explicitly:
   with the image delete-pending, or it aborts with files and registry intact;
   a retry after closing the app then succeeds.
 
+## Caching and shared dependencies
+
+`_deps.yml` builds FFmpeg once per run (host x64/arm64 and, when the tool has a
+Windows target, the mingw build) and publishes short-lived artifacts. The
+Linux, ARM64, coverage and Windows jobs consume those artifacts instead of
+building FFmpeg themselves; the cache keys are unchanged, so local runs and
+workflow dispatches still reuse the weekly cache.
+
+- ccache keys roll weekly (`<os>-<arch>-<tool>-<YYYY-Www>`) instead of per
+  commit, so the cache stops growing with every push.
+- The coverage job posts a single sticky comment on pull requests with the
+  line/branch figures and the 60% threshold; the same summary is written to
+  the workflow step summary and the HTML/XML report is uploaded as an
+  artifact.
+
 ## Reproducible builds
 
 The Windows packaging step is reproducible for identical sources and
@@ -137,9 +152,6 @@ Items that need credentials, a policy decision or a larger follow-up:
   not.
 - **Parser vectors**: multi-PPS switching, dependent slice segments and PAFF
   field coding are not generated; MBAFF/interlaced is covered.
-- **Efficiency**: `release.yml` rebuilds FFmpeg on tags because cache scopes
-  are per branch; ccache files accumulate per commit. Centralizing the FFmpeg
-  build and rolling the ccache key are follow-ups.
 - **Release channels**: by decision on 2026-11-25 only tagged stable releases
   are published. `nightly.yml` runs the extended fuzz suite; it does not build
   or publish nightly packages.

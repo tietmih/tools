@@ -88,24 +88,36 @@ jobs:
           test -f "$tool/docs/releases/v$version.zh-CN.md"
           python3 scripts/check_bilingual.py
 
+  deps:
+    name: ${{ needs.prepare.outputs.tool }} / dependencies
+    needs: prepare
+    uses: ./.github/workflows/_deps.yml
+    with:
+      tool: ${{ needs.prepare.outputs.tool }}
+      ref: ${{ needs.prepare.outputs.tag }}
+      build_host: true
+      build_windows: true
+
   linux:
     name: ${{ needs.prepare.outputs.tool }} / tests
-    needs: prepare
+    needs: [prepare, deps]
     uses: ./.github/workflows/_test-linux.yml
     with:
       tool: ${{ needs.prepare.outputs.tool }}
       ref: ${{ needs.prepare.outputs.tag }}
       artifact_suffix: x64
       upload_vectors: false
+      needs_deps: true
 
   windows:
     name: ${{ needs.prepare.outputs.tool }} / package
-    needs: prepare
+    needs: [prepare, deps]
     uses: ./.github/workflows/_build-windows.yml
     with:
       tool: ${{ needs.prepare.outputs.tool }}
       ref: ${{ needs.prepare.outputs.tag }}
       version: ${{ needs.prepare.outputs.version }}
+      needs_deps: true
 
   attest:
     name: attest provenance

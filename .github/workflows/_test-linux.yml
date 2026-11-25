@@ -22,6 +22,10 @@ on:
         type: boolean
         required: false
         default: true
+      needs_deps:
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -48,7 +52,14 @@ jobs:
           if [ "$(uname -m)" = "x86_64" ]; then
             sudo apt-get install -y --no-install-recommends nasm
           fi
+      - name: Download host FFmpeg artifact
+        if: inputs.needs_deps
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ${{ inputs.tool }}-ffmpeg-host-${{ inputs.artifact_suffix }}
+          path: ${{ inputs.tool }}/build-deps/ffmpeg-host
       - name: Restore host FFmpeg
+        if: '!inputs.needs_deps'
         id: host-ffmpeg
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -66,11 +77,14 @@ jobs:
       - name: Build host FFmpeg
         if: steps.host-ffmpeg.outputs.cache-hit != 'true' || steps.host-check.outputs.ok != 'true'
         run: bash "${{ inputs.tool }}/ci/ffmpeg-host.sh"
+      - name: ccache week
+        id: week
+        run: echo "value=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
       - name: Restore ccache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cache/ccache
-          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tool }}-${{ github.sha }}
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tool }}-${{ steps.week.outputs.value }}
           restore-keys: |
             ccache-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tool }}-
       - name: Release build and regression tests
