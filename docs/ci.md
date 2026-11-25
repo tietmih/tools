@@ -76,11 +76,15 @@ artifacts.
 The per-user uninstaller handles a running application explicitly:
 
 - interactive: it asks the user to close the app and offers Retry/Cancel;
-- silent (`/S`): it retries once, then aborts with exit code 2 and leaves the
-  installation untouched, so scripts can close the app and retry;
+- silent (`/S`): it retries once, then aborts and leaves the installation
+  untouched, so scripts can close the app and retry. NSIS relaunches the
+  uninstaller from `%TEMP%`, so the launcher's exit code is not a reliable
+  signal; check whether the install directory and uninstall registry key still
+  exist instead;
 - `windows-smoke.ps1` covers default install, `/D=`, `/LANG=2052`, upgrade from
-  0.3.0, uninstall, and the running-app abort path (exit 2, files and registry
-  intact, successful uninstall after closing the app).
+  0.3.0, uninstall, and the running-app path: either the uninstall completes
+  with the image delete-pending, or it aborts with files and registry intact;
+  a retry after closing the app then succeeds.
 
 ## Reproducible builds
 
