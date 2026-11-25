@@ -7,7 +7,7 @@ GitHub Actions is the only build and release path. Workflows live in
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | push/PR touching a tool, `scripts/`, or a workflow | Discovers tools from `tools.json` and runs the Linux x64/arm64 suites, Windows cross-build, native Windows smoke test, MSVC build and coverage |
+| `ci.yml` | push/PR touching a tool, `scripts/`, or a workflow | Discovers tools from `tools.json` and runs the Linux x64/arm64 suites, Windows cross-build, native Windows smoke test and MSVC build on `windows-2022` and `windows-2025`, plus coverage |
 | `repo-checks.yml` | every push/PR | Bilingual doc pairing, link/anchor checks, version literals, shellcheck, markdownlint, Python syntax, actionlint |
 | `static-analysis.yml` | code changes | cppcheck and clang-tidy analyzer checks for the parser, media layer, CLI and unit tests |
 | `release.yml` | tag `<tool>-v<version>`, or manual dispatch | Validates the annotated tag, version and bilingual notes, re-runs tests, builds the package, attests provenance and publishes the GitHub Release. Manual dispatch accepts `publish: false` for a dry run |
@@ -96,7 +96,8 @@ Items that need credentials, a policy decision or a larger follow-up:
   including by administrators. Required checks and mandatory pull requests are
   intentionally disabled to keep the direct-push workflow; CI remains
   advisory for direct pushes.
-- **Windows 2025 / ARM64 Windows**: validation runs on `windows-2022` x64.
+- **ARM64 Windows**: native checks run on `windows-2022` and `windows-2025`
+  x64; Windows on ARM is not validated.
 - **Reproducible builds**: no double-build hash comparison for the installer.
 - **Coverage reporting**: the line threshold is enforced (60%), but the report
   is not posted as a PR comment.

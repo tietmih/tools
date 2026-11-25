@@ -88,7 +88,8 @@ bash ci/coverage.sh         # 需要 gcovr
   Authenticode 签名；自动化前需要证书或 OSS 签名服务账号。
 - **分支保护**：`main` 现在拒绝 force-push 和删除分支（管理员同样受限）。
   必需检查和强制 PR 按直接推送流程有意关闭；直接推送时 CI 仍是建议性的。
-- **Windows 2025 / ARM64 Windows**：目前只在 `windows-2022` x64 上验证。
+- **ARM64 Windows**：原生检查在 `windows-2022` 和 `windows-2025` x64 上运行；
+  Windows on ARM 尚未验证。
 - **可复现构建**：没有对安装包做两次构建的哈希对比。
 - **覆盖率报告**：已强制 60% 行覆盖率阈值，但不会把报告评论到 PR。
 - **GUI 自动化**：覆盖启动、语言切换、正常退出、便携 ZIP 和安装器场景；不覆盖

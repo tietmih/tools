@@ -50,7 +50,7 @@
 
 | 工作流 | 触发条件 | 内容 |
 |---|---|---|
-| `ci.yml` | 代码和工作流变更 | 从 `.github/tools.json` 自动发现工具；Linux x64/arm64 回归、ASan/UBSan 与变异 fuzz、Windows 交叉构建与安装包/便携 ZIP、原生 Windows GUI/安装器冒烟、MSVC 构建、覆盖率。忽略 tag 和纯文档变更 |
+| `ci.yml` | 代码和工作流变更 | 从 `.github/tools.json` 自动发现工具；Linux x64/arm64 回归、ASan/UBSan 与变异 fuzz、Windows 交叉构建与安装包/便携 ZIP、在 `windows-2022` 和 `windows-2025` 上的原生 Windows GUI/安装器冒烟与 MSVC 构建、覆盖率。忽略 tag 和纯文档变更 |
 | `repo-checks.yml` | 每次推送/PR | 双语文档配对、链接/锚点、版本字面量、shellcheck、markdownlint、Python 语法、actionlint |
 | `static-analysis.yml` | 代码变更 | 对解析器、媒体层、命令行工具和测试跑 cppcheck 与 clang-tidy analyzer 检查 |
 | `release.yml` | tag `<tool>-v*` 或手动触发 | 版本/说明校验、测试、构建、provenance 证明和 GitHub Release；手动触发可传 `publish: false` 做 dry-run |
