@@ -90,6 +90,7 @@ jobs:
             ${{ inputs.tool }}/build-deps/vectors/*.h265
             ${{ inputs.tool }}/build-deps/vectors/*.mp4
             ${{ inputs.tool }}/build-deps/vectors/*.ts
+            ${{ inputs.tool }}/build-deps/vectors/*.m2ts
             ${{ inputs.tool }}/build-deps/vectors/*.mkv
             ${{ inputs.tool }}/build-deps/vectors/expected.json
             ${{ inputs.tool }}/build-deps/vectors/*.ref.ppm
