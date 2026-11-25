@@ -26,13 +26,26 @@ jobs:
         id: audit
         env:
           GH_TOKEN: ${{ github.token }}
+          # Releases published before this version predate the asset and
+          # bilingual-note policy; they are only checked for existence and a
+          # verifiable SHA256SUMS.
+          STRICT_FROM: "0.3.2"
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/assets"
           status=0
           report=""
+          version_ge() {
+            [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]
+          }
           while IFS= read -r tag; do
             echo "== $tag"
+            version="${tag##*-v}"
+            if version_ge "$version" "$STRICT_FROM"; then
+              strict=1
+            else
+              strict=0
+            fi
             if ! gh release view "$tag" >/dev/null 2>&1; then
               report="$report- \`$tag\`: no GitHub Release\n"
               status=1
@@ -66,15 +79,19 @@ jobs:
                 *cdx.json) sbom=$((sbom + 1)) ;;
               esac
             done
-            if [ "$installer" -lt 1 ] || [ "$portable" -ne "$installer" ] ||
-               [ "$sbom" -ne "$installer" ]; then
-              report="$report- \`$tag\`: unexpected asset set (installer=$installer portable=$portable sbom=$sbom)\n"
+            if [ "$installer" -lt 1 ]; then
+              report="$report- \`$tag\`: no installer asset\n"
               status=1
-            fi
-            notes=$(gh release view "$tag" --json body --jq '.body')
-            if ! printf '%s' "$notes" | grep -q '简体中文'; then
-              report="$report- \`$tag\`: Release notes are not bilingual\n"
-              status=1
+            elif [ "$strict" -eq 1 ]; then
+              if [ "$portable" -ne "$installer" ] || [ "$sbom" -ne "$installer" ]; then
+                report="$report- \`$tag\`: incomplete asset set (installer=$installer portable=$portable sbom=$sbom)\n"
+                status=1
+              fi
+              notes=$(gh release view "$tag" --json body --jq '.body')
+              if ! printf '%s' "$notes" | grep -q '简体中文'; then
+                report="$report- \`$tag\`: Release notes are not bilingual\n"
+                status=1
+              fi
             fi
           done < <(git tag -l '*-v*' | sort -V)
 
