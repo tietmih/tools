@@ -73,6 +73,13 @@ jobs:
             echo "$name=$(cat "$RUNNER_TEMP/$name.json")" >> "$GITHUB_OUTPUT"
           done
           for name in runtime msvc coverage; do
+            # Coverage builds are too slow for pull requests; the matrix stays
+            # populated so the skipped job keeps a readable name.
+            if [ "$name" = "coverage" ] &&
+               [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "has_$name=false" >> "$GITHUB_OUTPUT"
+              continue
+            fi
             if jq -e 'length > 0 and (.[0].name != "(none)")' "$RUNNER_TEMP/$name.json" >/dev/null; then
               echo "has_$name=true" >> "$GITHUB_OUTPUT"
             else
@@ -192,10 +199,11 @@ jobs:
         run: ./${{ matrix.name }}/ci/msvc.ps1
 
   coverage:
-    name: ${{ matrix.name }} / coverage
+    # Static name: a skipped job cannot resolve matrix context, and coverage is
+    # intentionally skipped on pull requests.
+    name: coverage
     needs: [discover, deps]
-    # Instrumented builds are slow; pull requests rely on the release suite.
-    if: needs.discover.outputs.has_coverage == 'true' && github.event_name != 'pull_request'
+    if: needs.discover.outputs.has_coverage == 'true'
     strategy:
       fail-fast: false
       matrix:
