@@ -66,6 +66,7 @@ jobs:
       - name: Verify version, notes and documentation
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           META_TOOL: ${{ steps.meta.outputs.tool }}
           META_TAG: ${{ steps.meta.outputs.tag }}
           META_VERSION: ${{ steps.meta.outputs.version }}
@@ -76,6 +77,23 @@ jobs:
           if [ "$(git cat-file -t "$tag" 2>/dev/null || true)" != "tag" ]; then
             echo "error: $tag is not an annotated tag" >&2
             exit 1
+          fi
+          # A published version is immutable. A release that exists and passes
+          # verification must not be overwritten; one with missing or broken
+          # assets may be repaired by re-running this workflow.
+          if [ "${{ inputs.publish }}" != "false" ] &&
+             gh release view "$tag" >/dev/null 2>&1; then
+            mkdir -p "$RUNNER_TEMP/audit"
+            rm -f "$RUNNER_TEMP/audit"/*
+            if gh release download "$tag" --pattern '*' \
+                 --dir "$RUNNER_TEMP/audit" >/dev/null 2>&1 &&
+               [ -f "$RUNNER_TEMP/audit/SHA256SUMS" ] &&
+               ( cd "$RUNNER_TEMP/audit" && sha256sum -c SHA256SUMS ) \
+                 >/dev/null 2>&1; then
+              echo "error: release $tag already exists and verifies; bump the version instead" >&2
+              exit 1
+            fi
+            echo "release $tag exists but does not verify; repairing it" >&2
           fi
           git merge-base --is-ancestor "$tag^{commit}" origin/main || {
             echo "error: tag $tag is not on main" >&2

@@ -26,6 +26,10 @@ on:
         type: boolean
         required: false
         default: false
+      fuzz_iterations:
+        type: string
+        required: false
+        default: "200"
 
 permissions:
   contents: read
@@ -94,7 +98,7 @@ jobs:
         run: bash "${{ inputs.tool }}/ci/linux.sh" release
       - name: Sanitizer build and fuzz
         env:
-          BS_FUZZ_ITERATIONS: "200"
+          BS_FUZZ_ITERATIONS: ${{ inputs.fuzz_iterations }}
         run: bash "${{ inputs.tool }}/ci/linux.sh" asan
       - name: Upload test vectors
         if: inputs.upload_vectors

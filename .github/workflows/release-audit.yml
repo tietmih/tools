@@ -1,0 +1,121 @@
+name: release audit
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: release-audit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Audit tags and releases
+        id: audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/assets"
+          status=0
+          report=""
+          while IFS= read -r tag; do
+            echo "== $tag"
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              report="$report- \`$tag\`: no GitHub Release\n"
+              status=1
+              continue
+            fi
+            rm -f "$RUNNER_TEMP/assets/"*
+            if ! gh release download "$tag" --pattern '*' --dir \
+                 "$RUNNER_TEMP/assets" >/dev/null 2>&1; then
+              report="$report- \`$tag\`: assets cannot be downloaded\n"
+              status=1
+              continue
+            fi
+            if [ ! -f "$RUNNER_TEMP/assets/SHA256SUMS" ]; then
+              report="$report- \`$tag\`: SHA256SUMS missing\n"
+              status=1
+              continue
+            fi
+            if ! ( cd "$RUNNER_TEMP/assets" && sha256sum -c SHA256SUMS ) \
+                 > "$RUNNER_TEMP/verify.txt" 2>&1; then
+              report="$report- \`$tag\`: SHA256SUMS does not verify\n"
+              status=1
+              continue
+            fi
+            installer=0
+            portable=0
+            sbom=0
+            for asset in "$RUNNER_TEMP"/assets/*; do
+              case "$asset" in
+                *setup.exe) installer=$((installer + 1)) ;;
+                *portable.zip) portable=$((portable + 1)) ;;
+                *cdx.json) sbom=$((sbom + 1)) ;;
+              esac
+            done
+            if [ "$installer" -lt 1 ] || [ "$portable" -ne "$installer" ] ||
+               [ "$sbom" -ne "$installer" ]; then
+              report="$report- \`$tag\`: unexpected asset set (installer=$installer portable=$portable sbom=$sbom)\n"
+              status=1
+            fi
+            notes=$(gh release view "$tag" --json body --jq '.body')
+            if ! printf '%s' "$notes" | grep -q '简体中文'; then
+              report="$report- \`$tag\`: Release notes are not bilingual\n"
+              status=1
+            fi
+          done < <(git tag -l '*-v*' | sort -V)
+
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "# Release audit failures"
+              echo
+              echo "The daily audit found problems with tagged releases:"
+              echo
+              printf '%b' "$report"
+              echo
+              echo "Re-run: \`gh workflow run release.yml -f tag=<tag>\`"
+            } > "$RUNNER_TEMP/report.md"
+            echo "failed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "All tagged releases are present, complete and verifiable."
+            echo "failed=false" >> "$GITHUB_OUTPUT"
+          fi
+          cat "$RUNNER_TEMP/report.md" 2>/dev/null || true
+          exit 0
+      - name: Open or update the audit issue
+        if: steps.audit.outputs.failed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Release audit failures"
+          existing=$(gh issue list --state open --search "in:title \"$title\"" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file "$RUNNER_TEMP/report.md"
+          else
+            gh issue create --title "$title" --body-file "$RUNNER_TEMP/report.md"
+          fi
+      - name: Close the audit issue when clean
+        if: steps.audit.outputs.failed != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Release audit failures"
+          existing=$(gh issue list --state open --search "in:title \"$title\"" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "All tagged releases verify."
+          fi

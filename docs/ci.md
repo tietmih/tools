@@ -8,10 +8,11 @@ GitHub Actions is the only build and release path. Workflows live in
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` | push/PR touching a tool, `scripts/`, or a workflow | Discovers tools from `tools.json`, builds FFmpeg once in a `deps` job, then runs the Linux x64/arm64 suites, Windows cross-build, native Windows smoke test and MSVC build on `windows-2022` and `windows-2025`, plus coverage |
-| `repo-checks.yml` | every push/PR | Bilingual doc pairing, link/anchor checks, version literals, shellcheck, markdownlint, Python syntax, actionlint |
+| `repo-checks.yml` | every push/PR | Bilingual doc pairing, link/anchor checks, tracked-file hygiene (no binaries/media/build output), version–CHANGELOG–README consistency, shellcheck, markdownlint, Python syntax, actionlint |
 | `static-analysis.yml` | code changes | cppcheck and clang-tidy analyzer checks for the parser, media layer, CLI and unit tests |
 | `release.yml` | tag `<tool>-v<version>`, or manual dispatch | Validates the annotated tag, version and bilingual notes, re-runs tests, builds the package, attests provenance and publishes the GitHub Release. Manual dispatch accepts `publish: false` for a dry run |
 | `dependency-check.yml` | weekly/manual | Compares `ci/deps.env` with upstream FFmpeg and reports the runner toolchain; opens or updates a tracking issue |
+| `release-audit.yml` | daily/manual | Verifies every `<tool>-v*` tag has a Release with installer, portable ZIP, SBOM and a passing `SHA256SUMS`; opens or updates an issue on failure |
 | `nightly.yml` | daily/manual | Builds the parser with ASan/UBSan and runs 3000 mutation-fuzz iterations |
 
 `ci.yml` ignores tag pushes (`tags-ignore`) and uses path filters, so
@@ -85,6 +86,28 @@ The per-user uninstaller handles a running application explicitly:
   0.3.0, uninstall, and the running-app path: either the uninstall completes
   with the image delete-pending, or it aborts with files and registry intact;
   a retry after closing the app then succeeds.
+
+## Release governance
+
+- **Tag audit** (`release-audit.yml`): daily, every `<tool>-v*` tag must have a
+  Release whose installer/portable/SBOM set is complete, whose `SHA256SUMS`
+  verifies, and whose notes are bilingual. Failures open or update a
+  `Release audit failures` issue.
+- **Immutability**: `release.yml` refuses to publish when the target tag
+  already has a Release that verifies; a broken Release may be repaired by
+  re-running the workflow. Dry runs (`publish=false`) are unaffected.
+- **Version coupling**: `ci/check-version.sh` requires the version in
+  `CMakeLists.txt` to match the Windows resources, About box, installer,
+  both CHANGELOGs and the "current release" table in the repository READMEs.
+- **Hygiene**: `scripts/check_repo_hygiene.py` fails if binaries, media,
+  `dist/`, `build-*` or `__pycache__` are tracked.
+
+## Runner cost policy
+
+- `windows-2025` runs only outside pull requests; PRs use `windows-2022`.
+- Fuzz iterations scale with the event: 50 on pull requests, 200 on
+  branches, 3000 in `nightly.yml`.
+- Coverage is built only outside pull requests; PRs run the release suite.
 
 ## Caching and shared dependencies
 

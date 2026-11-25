@@ -8,7 +8,7 @@ GitHub Actions 是唯一的构建和发布路径。工作流位于 `.github/work
 | 工作流 | 触发条件 | 内容 |
 |---|---|---|
 | `ci.yml` | 涉及工具、`scripts/` 或工作流的推送/PR | 从 `tools.json` 自动发现工具，运行 Linux x64/arm64、Windows 交叉构建、原生 Windows 冒烟、MSVC 和覆盖率 |
-| `repo-checks.yml` | 每次推送/PR | 双语文档配对、链接/锚点、版本字面量、shellcheck、markdownlint、Python 语法、actionlint |
+| `repo-checks.yml` | 每次推送/PR | 双语文档配对、链接/锚点、受版本库文件卫生（禁止二进制/媒体/构建产物）、版本–CHANGELOG–README 一致性、shellcheck、markdownlint、Python 语法、actionlint |
 | `static-analysis.yml` | 代码变更 | 对解析器、媒体层、命令行工具和单元测试跑 cppcheck 与 clang-tidy analyzer 检查 |
 | `release.yml` | tag `<tool>-v<version>` 或手动 | 校验注释 tag、版本和双语文档，重跑测试、构建安装包、生成 provenance 并发布 Release；手动触发可传 `publish: false` 做 dry-run |
 | `dependency-check.yml` | 每周/手动 | 对比 `ci/deps.env` 与上游 FFmpeg，报告 runner 工具链，创建/更新跟踪 issue |
@@ -77,6 +77,24 @@ provenance。
 - `windows-smoke.ps1` 覆盖默认安装、`/D=`、`/LANG=2052`、从 0.3.0 升级、卸载，
   以及运行中卸载路径：要么卸载完成（映像文件处于 delete-pending），要么中止且
   文件和注册表保持完整；关闭程序后重试可成功卸载。
+
+## 发布治理
+
+- **Tag 审计**（`release-audit.yml`）：每天检查每个 `<tool>-v*` tag 是否有
+  Release、安装包/便携 ZIP/SBOM 是否齐全、`SHA256SUMS` 是否通过、发布说明是否
+  双语。失败时创建或更新 `Release audit failures` issue。
+- **不可变发布**：`release.yml` 在目标 tag 已有且校验通过的 Release 时拒绝发布；
+  损坏的 Release 可通过重跑工作流修复。dry-run（`publish=false`）不受影响。
+- **版本联动**：`ci/check-version.sh` 要求 `CMakeLists.txt` 的版本与 Windows
+  资源、About、安装器、两个 CHANGELOG 以及仓库 README 的“当前发布”表一致。
+- **文件卫生**：`scripts/check_repo_hygiene.py` 在二进制、媒体、`dist/`、
+  `build-*` 或 `__pycache__` 被跟踪时失败。
+
+## Runner 成本策略
+
+- `windows-2025` 只在非 PR 运行；PR 只跑 `windows-2022`。
+- Fuzz 轮数按事件缩放：PR 50 轮、分支 200 轮、`nightly.yml` 3000 轮。
+- 覆盖率只在非 PR 构建；PR 运行 release 套件。
 
 ## 缓存与共享依赖
 

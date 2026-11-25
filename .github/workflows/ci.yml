@@ -48,8 +48,26 @@ jobs:
           jq -c '[.tools[] | select(.linux)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/linux.json"
           jq -c '[.tools[] | select(.arm64)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/arm64.json"
           jq -c '[.tools[] | select(.windows)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/windows.json"
-          jq -c '[.tools[] | select(.runtime) | .name] | map([{name: ., os: "windows-2022"}, {name: ., os: "windows-2025"}]) | add // [] | if length == 0 then [{"name":"(none)","os":"windows-2022"}] else . end' .github/tools.json > "$RUNNER_TEMP/runtime.json"
-          jq -c '[.tools[] | select(.msvc) | .name] | map([{name: ., os: "windows-2022"}, {name: ., os: "windows-2025"}]) | add // [] | if length == 0 then [{"name":"(none)","os":"windows-2022"}] else . end' .github/tools.json > "$RUNNER_TEMP/msvc.json"
+          # windows-2025 doubles Windows minutes; on pull requests only the
+          # primary 2022 runner is used.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            jq -c '[.tools[] | select(.runtime) | {name: .name, os: "windows-2022"}]' \
+              .github/tools.json > "$RUNNER_TEMP/runtime.json"
+            jq -c '[.tools[] | select(.msvc) | {name: .name, os: "windows-2022"}]' \
+              .github/tools.json > "$RUNNER_TEMP/msvc.json"
+          else
+            jq -c '[.tools[] | select(.runtime) | .name]
+                   | map([{name: ., os: "windows-2022"}, {name: ., os: "windows-2025"}])
+                   | add // []' .github/tools.json > "$RUNNER_TEMP/runtime.json"
+            jq -c '[.tools[] | select(.msvc) | .name]
+                   | map([{name: ., os: "windows-2022"}, {name: ., os: "windows-2025"}])
+                   | add // []' .github/tools.json > "$RUNNER_TEMP/msvc.json"
+          fi
+          for kind in runtime msvc; do
+            if [ "$(jq 'length' "$RUNNER_TEMP/$kind.json")" -eq 0 ]; then
+              echo '[{"name":"(none)","os":"windows-2022"}]' > "$RUNNER_TEMP/$kind.json"
+            fi
+          done
           jq -c '[.tools[] | select(.coverage)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/coverage.json"
           for name in linux arm64 windows runtime msvc coverage; do
             echo "$name=$(cat "$RUNNER_TEMP/$name.json")" >> "$GITHUB_OUTPUT"
@@ -89,6 +107,7 @@ jobs:
       artifact_suffix: x64
       upload_vectors: true
       needs_deps: true
+      fuzz_iterations: ${{ github.event_name == 'pull_request' && '50' || '200' }}
 
   arm64:
     name: ${{ matrix.name }}
@@ -104,6 +123,7 @@ jobs:
       artifact_suffix: arm64
       upload_vectors: false
       needs_deps: true
+      fuzz_iterations: ${{ github.event_name == 'pull_request' && '50' || '200' }}
 
   windows:
     name: ${{ matrix.name }}
@@ -174,16 +194,14 @@ jobs:
   coverage:
     name: ${{ matrix.name }} / coverage
     needs: [discover, deps]
-    if: needs.discover.outputs.has_coverage == 'true'
+    # Instrumented builds are slow; pull requests rely on the release suite.
+    if: needs.discover.outputs.has_coverage == 'true' && github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.discover.outputs.coverage) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    permissions:
-      contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -213,17 +231,3 @@ jobs:
             "${{ matrix.name }}/build-deps/coverage/coverage.xml" \
             --tool "${{ matrix.name }}" > coverage-summary.md
           cat coverage-summary.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Comment coverage on the pull request
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          marker="<!-- coverage-summary -->"
-          body=$(printf '%s\n\n%s' "$marker" "$(cat coverage-summary.md)")
-          existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/comments" \
-            --paginate --jq '.[] | select(.body | startswith("<!-- coverage-summary -->")) | .id' | head -n1)
-          if [ -n "$existing" ]; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -f body="$body" >/dev/null
-          else
-            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/comments" -f body="$body" >/dev/null
-          fi

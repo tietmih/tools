@@ -32,6 +32,19 @@ check "$ROOT/src/ui/main.cpp" "Bitstream Inspector $VERSION"
 check "$ROOT/src/ui/main.cpp" "码流分析器 $VERSION"
 check "$ROOT/installer/bitstream-inspector.nsi" \
     "!define APP_VERSION \"$VERSION\""
+check "$ROOT/CHANGELOG.md" "## [$VERSION]"
+check "$ROOT/CHANGELOG.zh-CN.md" "## [$VERSION]"
+
+# The repository README keeps a "current release" table.
+ROOT_README="$ROOT/../README.md"
+ROOT_README_ZH="$ROOT/../README.zh-CN.md"
+for readme in "$ROOT_README" "$ROOT_README_ZH"; do
+    if [ -f "$readme" ] &&
+       ! grep -Eq "bitstream-inspector \| $VERSION \|" "$readme"; then
+        echo "error: $readme does not list $VERSION as the current release" >&2
+        fail=1
+    fi
+done
 
 if [ "$fail" -ne 0 ]; then
     echo "version check failed (CMake version $VERSION)" >&2

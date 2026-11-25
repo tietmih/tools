@@ -38,6 +38,8 @@ jobs:
         run: |
           mapfile -t docs < <(git ls-files '*.md')
           npx --yes markdownlint-cli2@0.24.2 "${docs[@]}"
+      - name: Repository hygiene
+        run: python3 scripts/check_repo_hygiene.py
       - name: Version consistency
         run: |
           while IFS= read -r tool; do
