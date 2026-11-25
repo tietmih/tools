@@ -271,31 +271,17 @@ $exitCode = $uninstall.ExitCode
 if ($exitCode -ne 0 -and $exitCode -ne 2) {
     throw "unexpected uninstaller exit code with a running app: $exitCode"
 }
-if ($exitCode -eq 2) {
-    # The locked executable could not be removed: nothing else may be touched.
-    Assert-File (Join-Path $defaultDir 'bsinspector.exe')
-    Assert-File (Join-Path $defaultDir 'tools\bsinfo.exe')
-    if (-not (Test-Path $regPath)) {
-        throw "uninstaller removed the registry entry although it aborted"
-    }
-    $running.Kill()
-    $running.WaitForExit()
-    Start-Sleep -Seconds 1
-    Uninstall-App $defaultDir
-} else {
-    # Windows 10+ marks the running image delete-pending and finishes the
-    # uninstall; the process keeps running until it is closed.
+# NSIS relaunches the uninstaller from %TEMP%, and the exit code of the
+# launcher does not reliably reflect the child. Decide from the observable
+# state instead: either the uninstall completed, or it left everything intact.
+$deadline = (Get-Date).AddSeconds(45)
+while ((Test-Path $regPath) -and ((Get-Date) -lt $deadline)) {
+    Start-Sleep -Milliseconds 500
+}
+if (-not (Test-Path $regPath)) {
+    # Completed: the image is delete-pending, the process keeps running.
     if ($running.HasExited) {
         throw "running app exited during uninstall"
-    }
-    # The NSIS uninstaller relaunches itself from %TEMP%; registry cleanup can
-    # land slightly after the launcher exits, so poll instead of asserting once.
-    $deadline = (Get-Date).AddSeconds(30)
-    while ((Test-Path $regPath) -and ((Get-Date) -lt $deadline)) {
-        Start-Sleep -Milliseconds 500
-    }
-    if (Test-Path $regPath) {
-        throw "uninstaller kept the registry entry after a successful uninstall"
     }
     $running.Kill()
     $running.WaitForExit()
@@ -307,6 +293,20 @@ if ($exitCode -eq 2) {
     if (Test-Path $defaultDir) {
         throw "install directory still exists after the uninstall"
     }
+} else {
+    # Aborted: files and registry must be untouched, then a retry works.
+    # NSIS relaunches the uninstaller in a child process, so the exit code seen
+    # here is not a reliable signal; the untouched state is.
+    Write-Host "uninstaller reported exit $exitCode and left the install intact"
+    Assert-File (Join-Path $defaultDir 'bsinspector.exe')
+    Assert-File (Join-Path $defaultDir 'tools\bsinfo.exe')
+    if (-not (Test-Path $regPath)) {
+        throw "uninstaller removed the registry entry although it aborted"
+    }
+    $running.Kill()
+    $running.WaitForExit()
+    Start-Sleep -Seconds 1
+    Uninstall-App $defaultDir
 }
 
 Write-Host "windows smoke test passed"Write-Host "windows smoke test passed"
