@@ -175,16 +175,26 @@ if ($gui.MainWindowHandle -eq 0) {
     throw "bsinspector.exe did not create a main window"
 }
 $hwnd = $gui.MainWindowHandle
+
+function Wait-Setting([string]$Path, [string]$Pattern) {
+    $limit = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $limit) {
+        if ((Test-Path $Path) -and
+            (Select-String -Path $Path -Pattern $Pattern -Quiet)) {
+            return $true
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    return $false
+}
+
 # IDM_LANG_ZH = 2302, IDM_LANG_EN = 2301.
 [void][Win32]::PostMessage($hwnd, 0x0111, [IntPtr]2302, [IntPtr]::Zero)
-Start-Sleep -Milliseconds 800
-Assert-File $settings
-if (-not (Select-String -Path $settings -Pattern '^language=2$' -Quiet)) {
+if (-not (Wait-Setting $settings '^language=2$')) {
     throw "Chinese language switch was not persisted"
 }
 [void][Win32]::PostMessage($hwnd, 0x0111, [IntPtr]2301, [IntPtr]::Zero)
-Start-Sleep -Milliseconds 800
-if (-not (Select-String -Path $settings -Pattern '^language=1$' -Quiet)) {
+if (-not (Wait-Setting $settings '^language=1$')) {
     throw "English language switch was not persisted"
 }
 [void][Win32]::PostMessage($hwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
