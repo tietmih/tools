@@ -48,8 +48,8 @@ jobs:
           jq -c '[.tools[] | select(.linux)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/linux.json"
           jq -c '[.tools[] | select(.arm64)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/arm64.json"
           jq -c '[.tools[] | select(.windows)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/windows.json"
-          jq -c '[.tools[] | select(.runtime)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/runtime.json"
-          jq -c '[.tools[] | select(.msvc)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/msvc.json"
+          jq -c '[.tools[] | select(.runtime) | .name] | map([{name: ., os: "windows-2022"}, {name: ., os: "windows-2025"}]) | add // [] | if length == 0 then [{"name":"(none)","os":"windows-2022"}] else . end' .github/tools.json > "$RUNNER_TEMP/runtime.json"
+          jq -c '[.tools[] | select(.msvc) | .name] | map([{name: ., os: "windows-2022"}, {name: ., os: "windows-2025"}]) | add // [] | if length == 0 then [{"name":"(none)","os":"windows-2022"}] else . end' .github/tools.json > "$RUNNER_TEMP/msvc.json"
           jq -c '[.tools[] | select(.coverage)] | if length == 0 then [{"name":"(none)"}] else . end' .github/tools.json > "$RUNNER_TEMP/coverage.json"
           for name in linux arm64 windows runtime msvc coverage; do
             echo "$name=$(cat "$RUNNER_TEMP/$name.json")" >> "$GITHUB_OUTPUT"
@@ -102,14 +102,14 @@ jobs:
       tool: ${{ matrix.name }}
 
   windows-runtime:
-    name: ${{ matrix.name }} / windows runtime
+    name: ${{ matrix.name }} / windows runtime (${{ matrix.os }})
     needs: [discover, linux, windows]
     if: needs.discover.outputs.has_runtime == 'true'
     strategy:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.discover.outputs.runtime) }}
-    runs-on: windows-2022
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -138,14 +138,14 @@ jobs:
             -Installer "$env:GITHUB_WORKSPACE\installer"
 
   msvc:
-    name: ${{ matrix.name }} / msvc
+    name: ${{ matrix.name }} / msvc (${{ matrix.os }})
     needs: discover
     if: needs.discover.outputs.has_msvc == 'true'
     strategy:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.discover.outputs.msvc) }}
-    runs-on: windows-2022
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
