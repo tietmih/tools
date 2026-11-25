@@ -4,33 +4,17 @@ on:
   push:
     tags-ignore:
       - "**"
-    paths:
-      - "*/ci/**"
-      - "*/src/**"
-      - "*/tests/**"
-      - "*/tools/**"
-      - "*/scripts/**"
-      - "*/installer/**"
-      - "*/res/**"
-      - "*/third_party/**"
-      - "*/CMakeLists.txt"
-      - ".github/workflows/**"
-      - ".github/tools.json"
-      - "scripts/**"
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - "dist/**"
   pull_request:
-    paths:
-      - "*/ci/**"
-      - "*/src/**"
-      - "*/tests/**"
-      - "*/tools/**"
-      - "*/scripts/**"
-      - "*/installer/**"
-      - "*/res/**"
-      - "*/third_party/**"
-      - "*/CMakeLists.txt"
-      - ".github/workflows/**"
-      - ".github/tools.json"
-      - "scripts/**"
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - "dist/**"
   workflow_dispatch:
 
 concurrency:
