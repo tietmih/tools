@@ -509,7 +509,7 @@ void parseH265Sps(BitReader &br, SyntaxBuilder *sb, H265Sps &sps)
             poc = static_cast<int>(r.u(sps.log2_max_poc_lsb_minus4 + 4, "lt_ref_pic_poc_lsb_sps"));
             bool used = false;
             r.flag("used_by_curr_pic_lt_sps_flag", used);
-            sps.lt_used_sps[i] = used ? 1 : 0;
+            sps.lt_used_sps[i] = static_cast<uint8_t>(used);
         }
     }
     r.flag("sps_temporal_mvp_enabled_flag", sps.temporal_mvp_enabled);
@@ -750,7 +750,7 @@ void parseH265SliceSegmentHeader(BitReader &br, SyntaxBuilder *sb, H265State &st
                 num_pic_total_curr += used ? 1 : 0;
 
             int num_long_term_sps = 0, num_long_term_pics = 0;
-            std::vector<int> lt_used;
+            std::vector<uint8_t> lt_used;
             if (sps.long_term_ref_pics_present) {
                 if (sps.num_long_term_ref_pics_sps > 0)
                     num_long_term_sps =
