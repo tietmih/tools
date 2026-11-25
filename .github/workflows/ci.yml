@@ -82,7 +82,7 @@ jobs:
           "$RUNNER_TEMP/actionlint"
 
   linux:
-    name: ${{ matrix.name }} / linux x64
+    name: ${{ matrix.name }}
     needs: discover
     strategy:
       fail-fast: false
@@ -96,7 +96,7 @@ jobs:
       upload_vectors: true
 
   arm64:
-    name: ${{ matrix.name }} / linux arm64
+    name: ${{ matrix.name }}
     needs: discover
     strategy:
       fail-fast: false
@@ -110,7 +110,7 @@ jobs:
       upload_vectors: false
 
   windows:
-    name: ${{ matrix.name }} / windows
+    name: ${{ matrix.name }}
     needs: discover
     strategy:
       fail-fast: false

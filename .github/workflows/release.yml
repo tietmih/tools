@@ -88,7 +88,7 @@ jobs:
           python3 scripts/check_bilingual.py
 
   linux:
-    name: tests
+    name: ${{ needs.prepare.outputs.tool }} / tests
     needs: prepare
     uses: ./.github/workflows/_test-linux.yml
     with:
@@ -98,7 +98,7 @@ jobs:
       upload_vectors: false
 
   windows:
-    name: package
+    name: ${{ needs.prepare.outputs.tool }} / package
     needs: prepare
     uses: ./.github/workflows/_build-windows.yml
     with:

@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   test:
-    name: ${{ inputs.tool }} / linux ${{ inputs.artifact_suffix }}
+    name: linux ${{ inputs.artifact_suffix }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     env:
