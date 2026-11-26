@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,6 +32,70 @@ constexpr int IDC_DIFF = 3107;
 constexpr int IDC_PSNR = 3108;
 
 enum class SyncMode { Frame, Poc, Time };
+enum class ViewMode {
+  SideBySide,
+  Subtraction,
+  Temperature,
+  PsnrClip,
+  SplitH,
+  SplitV
+};
+
+void makeSubtractImage(const bs::YuvFrameView& a, const bs::YuvFrameView& b,
+                       bool clip, std::vector<uint8_t>& bgra) {
+  const int width = a.planes[0].width;
+  const int height = a.planes[0].height;
+  bgra.resize(static_cast<size_t>(width) * height * 4);
+  const double scale = a.bit_depth > 8 ? 2.0 : 8.0;
+  for (int y = 0; y < height; y++) {
+    const uint8_t* row_a =
+        a.planes[0].data + static_cast<size_t>(y) * a.planes[0].stride;
+    const uint8_t* row_b =
+        b.planes[0].data + static_cast<size_t>(y) * b.planes[0].stride;
+    for (int x = 0; x < width; x++) {
+      int va = 0;
+      int vb = 0;
+      if (a.bit_depth > 8) {
+        va = row_a[x * 2] | (row_a[x * 2 + 1] << 8);
+        vb = row_b[x * 2] | (row_b[x * 2 + 1] << 8);
+      } else {
+        va = row_a[x];
+        vb = row_b[x];
+      }
+      const int value =
+          std::min(255, static_cast<int>(std::abs(va - vb) * scale));
+      const size_t at = (static_cast<size_t>(y) * width + x) * 4;
+      if (clip) {
+        const bool hot = value >= 32;
+        bgra[at + 0] = 0;
+        bgra[at + 1] = 0;
+        bgra[at + 2] = hot ? 255 : 0;
+      } else {
+        bgra[at + 0] = static_cast<uint8_t>(value);
+        bgra[at + 1] = static_cast<uint8_t>(value);
+        bgra[at + 2] = static_cast<uint8_t>(value);
+      }
+      bgra[at + 3] = 255;
+    }
+  }
+}
+
+void makeSplitImage(const ImageData& left, const ImageData& right,
+                    bool vertical, std::vector<uint8_t>& bgra, int& width,
+                    int& height) {
+  width = std::min(left.width, right.width);
+  height = std::min(left.height, right.height);
+  bgra.resize(static_cast<size_t>(width) * height * 4);
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      const bool use_left = vertical ? (x < width / 2) : (y < height / 2);
+      const ImageData& source = use_left ? left : right;
+      const size_t src = (static_cast<size_t>(y) * source.width + x) * 4;
+      const size_t dst = (static_cast<size_t>(y) * width + x) * 4;
+      std::memcpy(&bgra[dst], &source.bgra[src], 4);
+    }
+  }
+}
 
 struct State {
   HINSTANCE inst = nullptr;
@@ -38,10 +104,10 @@ struct State {
   HWND next = nullptr;
   HWND status = nullptr;
   HWND sync = nullptr;
-  HWND diff_button = nullptr;
+  HWND mode = nullptr;
   HWND psnr_box = nullptr;
   SyncMode sync_mode = SyncMode::Frame;
-  bool diff = false;
+  ViewMode view_mode = ViewMode::SideBySide;
   VideoView left_view;
   VideoView right_view;
   bs::Stream left;
@@ -169,7 +235,7 @@ struct State {
       right_view.clear(tr(L"no matching frame", L"无匹配帧"));
     } else if (render(right, right_media.get(), right_frame, right_image,
                       keyframe_only, error)) {
-      if (diff) {
+      if (view_mode != ViewMode::SideBySide) {
         bs::QualityMetrics metrics;
         std::string quality_error;
         const size_t bytes = right_image.bit_depth > 8 ? 2 : 1;
@@ -202,11 +268,28 @@ struct State {
           swprintf(text, 96, L"PSNR %.2f dB  SSIM %.4f", metrics.psnr_avg,
                    metrics.ssim);
           SetWindowTextW(psnr_box, text);
-          ImageData diff_image;
-          bs::makeDiffImage(a, b, diff_image.bgra);
-          diff_image.width = left_image.width;
-          diff_image.height = left_image.height;
-          right_view.setImage(std::move(diff_image),
+          std::vector<uint8_t> output;
+          int output_w = 0;
+          int output_h = 0;
+          if (view_mode == ViewMode::Temperature) {
+            bs::makeDiffImage(a, b, output);
+            output_w = left_image.width;
+            output_h = left_image.height;
+          } else if (view_mode == ViewMode::Subtraction ||
+                     view_mode == ViewMode::PsnrClip) {
+            makeSubtractImage(a, b, view_mode == ViewMode::PsnrClip, output);
+            output_w = left_image.width;
+            output_h = left_image.height;
+          } else {
+            makeSplitImage(left_image, right_image,
+                           view_mode == ViewMode::SplitV, output, output_w,
+                           output_h);
+          }
+          ImageData result_image;
+          result_image.bgra = std::move(output);
+          result_image.width = output_w;
+          result_image.height = output_h;
+          right_view.setImage(std::move(result_image),
                               tr(L"difference", L"差异"));
         } else {
           SetWindowTextW(psnr_box, L"-");
@@ -237,7 +320,7 @@ LRESULT CALLBACK compareProc(HWND hwnd, UINT msg, WPARAM wparam,
   }
   if (!state) return DefWindowProcW(hwnd, msg, wparam, lparam);
   switch (msg) {
-    case WM_CREATE:
+    case WM_CREATE: {
       state->hwnd = hwnd;
       state->left_view.create(hwnd, state->inst, IDC_LEFT);
       state->right_view.create(hwnd, state->inst, IDC_RIGHT);
@@ -264,19 +347,28 @@ LRESULT CALLBACK compareProc(HWND hwnd, UINT msg, WPARAM wparam,
       SendMessageW(state->sync, CB_ADDSTRING, 0,
                    reinterpret_cast<LPARAM>(tr(L"Sync: Time", L"同步：时间")));
       SendMessageW(state->sync, CB_SETCURSEL, 0, 0);
-      state->diff_button = CreateWindowExW(
-          0, L"BUTTON", tr(L"Difference", L"差异"),
-          WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 0, 0, 0, 0, hwnd,
-          reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_DIFF)), state->inst,
-          nullptr);
+      state->mode = CreateWindowExW(
+          0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 0, 0,
+          0, 220, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_DIFF)),
+          state->inst, nullptr);
+      const wchar_t* modes[] = {tr(L"Side by side", L"并排"),
+                                tr(L"Subtraction", L"相减"),
+                                tr(L"Temperature", L"温度图"),
+                                tr(L"PSNR clip", L"PSNR 裁剪"),
+                                tr(L"Horizontal split", L"水平分割"),
+                                tr(L"Vertical split", L"垂直分割")};
+      for (const wchar_t* item : modes)
+        SendMessageW(state->mode, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(item));
+      SendMessageW(state->mode, CB_SETCURSEL, 0, 0);
       state->psnr_box = CreateWindowExW(
           0, L"STATIC", L"-", WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 0, 0, hwnd,
           reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PSNR)), state->inst,
           nullptr);
       SendMessageW(state->sync, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont()),
                    TRUE);
-      SendMessageW(state->diff_button, WM_SETFONT,
-                   reinterpret_cast<WPARAM>(uiFont()), TRUE);
+      SendMessageW(state->mode, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont()),
+                   TRUE);
       SendMessageW(state->psnr_box, WM_SETFONT,
                    reinterpret_cast<WPARAM>(uiFont()), TRUE);
       SendMessageW(state->prev, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont()),
@@ -287,6 +379,7 @@ LRESULT CALLBACK compareProc(HWND hwnd, UINT msg, WPARAM wparam,
                    reinterpret_cast<WPARAM>(uiFont()), TRUE);
       state->showFrame();
       return 0;
+    }
     case WM_SIZE: {
       RECT rc;
       GetClientRect(hwnd, &rc);
@@ -295,11 +388,10 @@ LRESULT CALLBACK compareProc(HWND hwnd, UINT msg, WPARAM wparam,
       MoveWindow(state->prev, pad, pad, px(80), button_h, TRUE);
       MoveWindow(state->next, pad + px(86), pad, px(80), button_h, TRUE);
       MoveWindow(state->sync, pad + px(172), pad, px(130), px(200), TRUE);
-      MoveWindow(state->diff_button, pad + px(308), pad, px(110), button_h,
-                 TRUE);
-      MoveWindow(state->psnr_box, pad + px(424), pad, px(190), button_h, TRUE);
-      MoveWindow(state->status, pad + px(620), pad,
-                 std::max(0, static_cast<int>(rc.right) - pad - px(620)),
+      MoveWindow(state->mode, pad + px(308), pad, px(150), px(220), TRUE);
+      MoveWindow(state->psnr_box, pad + px(464), pad, px(190), button_h, TRUE);
+      MoveWindow(state->status, pad + px(660), pad,
+                 std::max(0, static_cast<int>(rc.right) - pad - px(660)),
                  button_h, TRUE);
       const int top = pad + button_h + pad;
       const int height = std::max(0, static_cast<int>(rc.bottom) - top - pad);
@@ -329,9 +421,15 @@ LRESULT CALLBACK compareProc(HWND hwnd, UINT msg, WPARAM wparam,
         state->showFrame();
         return 0;
       }
-      if (LOWORD(wparam) == IDC_DIFF) {
-        state->diff =
-            SendMessageW(state->diff_button, BM_GETCHECK, 0, 0) == BST_CHECKED;
+      if (LOWORD(wparam) == IDC_DIFF && HIWORD(wparam) == CBN_SELCHANGE) {
+        const int sel =
+            static_cast<int>(SendMessageW(state->mode, CB_GETCURSEL, 0, 0));
+        state->view_mode = sel == 1   ? ViewMode::Subtraction
+                           : sel == 2 ? ViewMode::Temperature
+                           : sel == 3 ? ViewMode::PsnrClip
+                           : sel == 4 ? ViewMode::SplitH
+                           : sel == 5 ? ViewMode::SplitV
+                                      : ViewMode::SideBySide;
         state->showFrame();
         return 0;
       }

@@ -180,7 +180,7 @@ int main(int argc, char** argv) {
         std::fwrite(bom, 1, 3, csv);
         std::fprintf(csv,
                      "display_index,frame,psnr_y,psnr_u,psnr_v,psnr_avg,"
-                     "ssim\r\n");
+                     "ssim,mse_y,mse_avg,msad_y,msad_avg\r\n");
       }
     }
     for (size_t position = 0; position < order.size(); position++) {
@@ -259,9 +259,13 @@ int main(int argc, char** argv) {
           position, frame_index, metrics.psnr_y, metrics.psnr_u, metrics.psnr_v,
           metrics.psnr_avg, metrics.ssim);
       if (csv) {
-        std::fprintf(csv, "%zu,%d,%.4f,%.4f,%.4f,%.4f,%.6f\r\n", position,
-                     frame_index, metrics.psnr_y, metrics.psnr_u,
-                     metrics.psnr_v, metrics.psnr_avg, metrics.ssim);
+        std::fprintf(csv,
+                     "%zu,%d,%.4f,%.4f,%.4f,%.4f,%.6f,%.4f,%.4f,%.4f,"
+                     "%.4f\r\n",
+                     position, frame_index, metrics.psnr_y, metrics.psnr_u,
+                     metrics.psnr_v, metrics.psnr_avg, metrics.ssim,
+                     metrics.mse_y, metrics.mse_avg, metrics.msad_y,
+                     metrics.msad_avg);
       }
     }
     std::fclose(ref_file);

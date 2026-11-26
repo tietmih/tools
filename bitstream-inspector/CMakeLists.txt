@@ -55,7 +55,8 @@ endif()
 
 set(BS_MEDIA_TARGET "")
 if(BS_FFMPEG_INCLUDE_DIR)
-    add_library(bs_media STATIC src/media/media_file.cpp)
+    add_library(bs_media STATIC src/media/media_file.cpp
+        src/media/yuv_convert.cpp)
     target_link_libraries(bs_media PUBLIC bs_core)
     target_include_directories(bs_media PUBLIC ${BS_FFMPEG_INCLUDE_DIR})
     if(BS_FFMPEG_LIBRARIES)
@@ -126,6 +127,7 @@ if(WIN32)
         src/ui/syntax_tree.cpp
         src/ui/thumbnail_strip.cpp
         src/ui/refs_view.cpp
+        src/ui/yuv_viewer.cpp
         src/ui/hex_view.cpp
         src/ui/video_view.cpp
         src/ui/chart_view.cpp

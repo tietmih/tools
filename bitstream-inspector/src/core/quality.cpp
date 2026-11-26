@@ -126,21 +126,25 @@ bool computeQuality(const YuvFrameView& test, const YuvFrameView& reference,
   }
   const double max_value = static_cast<double>((1u << test.bit_depth) - 1u);
   double mse[3] = {};
+  double msad[3] = {};
   double area[3] = {};
   double total_area = 0.0;
   for (int p = 0; p < 3; p++) {
     const YuvPlaneView& a = test.planes[p];
     const YuvPlaneView& b = reference.planes[p];
     double sum = 0.0;
+    double sum_abs = 0.0;
     for (int y = 0; y < a.height; y++) {
       for (int x = 0; x < a.width; x++) {
         const double d = static_cast<double>(sample(a, x, y, test.bit_depth)) -
                          static_cast<double>(sample(b, x, y, test.bit_depth));
         sum += d * d;
+        sum_abs += std::fabs(d);
       }
     }
     area[p] = static_cast<double>(a.width) * a.height;
     mse[p] = sum / area[p];
+    msad[p] = sum_abs / area[p];
     total_area += area[p];
   }
   const double w0 = area[0] / total_area;
@@ -151,6 +155,10 @@ bool computeQuality(const YuvFrameView& test, const YuvFrameView& reference,
   out.mse_u = mse[1];
   out.mse_v = mse[2];
   out.mse_avg = avg_mse;
+  out.msad_y = msad[0];
+  out.msad_u = msad[1];
+  out.msad_v = msad[2];
+  out.msad_avg = msad[0] * w0 + msad[1] * w1 + msad[2] * w2;
   out.max_value = static_cast<int>(max_value);
   out.psnr_y = psnrFromMse(mse[0], max_value);
   out.psnr_u = psnrFromMse(mse[1], max_value);

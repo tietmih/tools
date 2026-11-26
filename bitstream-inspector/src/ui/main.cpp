@@ -28,6 +28,7 @@
 #include "ui/thumbnail_strip.h"
 #include "ui/ui_util.h"
 #include "ui/video_view.h"
+#include "ui/yuv_viewer.h"
 #ifdef BS_HAVE_FFMPEG
 #include "media/media_file.h"
 #endif
@@ -63,6 +64,7 @@ enum : int {
   IDM_FILE_COMPARE = 2010,
   IDM_FILE_REFERENCE = 2011,
   IDM_FILE_EXPORT_QUALITY = 2012,
+  IDM_FILE_YUV_VIEWER = 2013,
   IDM_VIEW_PREV = 2101,
   IDM_VIEW_NEXT = 2102,
   IDM_VIEW_RELOAD = 2103,
@@ -75,6 +77,9 @@ enum : int {
   IDM_VIEW_OVERLAY = 2118,
   IDM_VIEW_CONFORMANCE = 2119,
   IDM_VIEW_DIFF = 2120,
+  IDM_VIEW_BITWIN_1 = 2122,
+  IDM_VIEW_BITWIN_2 = 2123,
+  IDM_VIEW_BITWIN_5 = 2124,
   IDM_VIEW_MATRIX_AUTO = 2108,
   IDM_VIEW_MATRIX_601 = 2109,
   IDM_VIEW_MATRIX_709 = 2110,
@@ -164,6 +169,7 @@ struct App {
   int preview_matrix = -1;  // -1 = VUI/auto
   int preview_range = -1;   // -1 = VUI, 0 = limited, 1 = full
   bool show_overlay = false;
+  int bit_window_sec = 1;
   std::atomic<bool> show_diff{false};
   std::wstring reference_path;
   int reference_frame = -1;
@@ -484,6 +490,8 @@ DWORD WINAPI qualityWorkerProc(LPVOID param) {
       sample.psnr_y = metrics.psnr_y;
       sample.psnr_avg = metrics.psnr_avg;
       sample.ssim = metrics.ssim;
+      sample.mse_avg = metrics.mse_avg;
+      sample.msad_avg = metrics.msad_avg;
       psnr_sum += metrics.psnr_avg;
       ssim_sum += metrics.ssim;
       measured++;
@@ -638,6 +646,8 @@ void createMenu(HWND hwnd) {
               tr(L"&Compare Streams...", L"码流对比(&C)..."));
   AppendMenuW(file, MF_STRING, IDM_FILE_REFERENCE,
               tr(L"Load Reference &YUV...", L"加载参考 YUV(&Y)..."));
+  AppendMenuW(file, MF_STRING, IDM_FILE_YUV_VIEWER,
+              tr(L"YUV &Viewer...", L"YUV 查看器(&V)..."));
   AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(file, MF_STRING, IDM_FILE_EXIT, tr(L"E&xit", L"退出(&X)"));
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file),
@@ -668,6 +678,14 @@ void createMenu(HWND hwnd) {
               tr(L"Chart: &Bit Allocation", L"图表：比特分配(&B)"));
   AppendMenuW(view, MF_STRING, IDM_VIEW_CHART_QUALITY,
               tr(L"Chart: &Quality Metrics", L"图表：质量指标(&Q)"));
+  HMENU bitwin = CreatePopupMenu();
+  AppendMenuW(bitwin, MF_STRING, IDM_VIEW_BITWIN_1, L"1 s");
+  AppendMenuW(bitwin, MF_STRING, IDM_VIEW_BITWIN_2, L"2 s");
+  AppendMenuW(bitwin, MF_STRING, IDM_VIEW_BITWIN_5, L"5 s");
+  CheckMenuRadioItem(bitwin, IDM_VIEW_BITWIN_1, IDM_VIEW_BITWIN_5,
+                     IDM_VIEW_BITWIN_1, MF_BYCOMMAND);
+  AppendMenuW(view, MF_POPUP, reinterpret_cast<UINT_PTR>(bitwin),
+              tr(L"Bitrate &Window", L"码率窗口(&W)"));
   AppendMenuW(view, MF_STRING | (g_app.show_overlay ? MF_CHECKED : 0),
               IDM_VIEW_OVERLAY,
               tr(L"Slice/&Tile Overlay", L"Slice/Tile 叠加(&T)"));
@@ -1600,13 +1618,13 @@ void exportCsv(ExportKind kind) {
                   kTitle, MB_OK | MB_ICONINFORMATION);
       return;
     }
-    data += "index,valid,psnr_y,psnr_avg,ssim\r\n";
+    data += "index,valid,psnr_y,psnr_avg,ssim,mse_avg,msad_avg\r\n";
     for (size_t i = 0; i < g_app.quality.size(); i++) {
       const auto& sample = g_app.quality[i];
       char row[128];
-      std::snprintf(row, sizeof(row), "%zu,%d,%.4f,%.4f,%.6f\r\n", i,
+      std::snprintf(row, sizeof(row), "%zu,%d,%.4f,%.4f,%.6f,%.4f,%.4f\r\n", i,
                     sample.valid ? 1 : 0, sample.psnr_y, sample.psnr_avg,
-                    sample.ssim);
+                    sample.ssim, sample.mse_avg, sample.msad_avg);
       data += row;
     }
   } else {
@@ -1781,6 +1799,21 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         case IDM_FILE_REFERENCE:
           loadReferenceDialog(hwnd);
           return 0;
+        case IDM_FILE_YUV_VIEWER: {
+          int w = 1920;
+          int h = 1080;
+          if (g_app.loaded) {
+            if (g_app.stream.codec() == Codec::H264) {
+              w = g_app.stream.h264Sps().width();
+              h = g_app.stream.h264Sps().height();
+            } else if (g_app.stream.codec() == Codec::H265) {
+              w = g_app.stream.h265Sps().display_width();
+              h = g_app.stream.h265Sps().display_height();
+            }
+          }
+          YuvViewerWindow::open(hwnd, g_app.inst, w, h);
+          return 0;
+        }
         case IDM_VIEW_DIFF:
           if (g_app.reference_path.empty()) {
             MessageBoxW(
@@ -1800,6 +1833,15 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
           return 0;
         case IDM_VIEW_CHART_QUALITY:
           g_app.chart.setMode(ChartView::ChartMode::Quality);
+          return 0;
+        case IDM_VIEW_BITWIN_1:
+        case IDM_VIEW_BITWIN_2:
+        case IDM_VIEW_BITWIN_5:
+          g_app.bit_window_sec =
+              LOWORD(wparam) == IDM_VIEW_BITWIN_5
+                  ? 5
+                  : (LOWORD(wparam) == IDM_VIEW_BITWIN_2 ? 2 : 1);
+          g_app.chart.setBitWindow(g_app.bit_window_sec);
           return 0;
         case IDM_VIEW_MATRIX_AUTO:
           g_app.preview_matrix = -1;

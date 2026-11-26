@@ -26,6 +26,8 @@ struct QualitySample {
   double psnr_y = 0.0;
   double psnr_avg = 0.0;
   double ssim = 0.0;
+  double mse_avg = 0.0;
+  double msad_avg = 0.0;
 };
 
 struct QualityMetrics {
@@ -38,6 +40,10 @@ struct QualityMetrics {
   double mse_u = 0.0;
   double mse_v = 0.0;
   double mse_avg = 0.0;
+  double msad_y = 0.0;
+  double msad_u = 0.0;
+  double msad_v = 0.0;
+  double msad_avg = 0.0;
   int max_value = 255;
 };
 

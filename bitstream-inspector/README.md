@@ -50,20 +50,25 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
   for containers and raw elementary streams (decoded from the GOP start).
   Hovering shows Y/Cb/Cr and RGB values; colour matrix and range can be
   overridden for the preview only.
-- **Charts**: frame-size bars with a picture-type strip, per-AU bit allocation,
-  or CPB0 occupancy. Click to jump.
+- **Charts**: frame-size bars with a picture-type strip, per-AU bit allocation
+  with 1/2/5-second bitrate windows, quality metrics, or CPB0 occupancy. Click
+  to jump.
 - **References**: a Refs tab lists the selected frame's L0/L1 POCs, DPB count
   and missing references; double-clicking a reference jumps to that frame.
 - **Conformance**: a View menu report checks picture size, MB/CTB rate, DPB
   and average bitrate against the signalled H.264/H.265 level.
-- **Quality**: File > Load Reference YUV computes per-frame PSNR/SSIM for the
+- **YUV Viewer**: File > YUV Viewer opens a standalone raw planar YUV viewer
+  with I420/I422/I444/P010/P210/P012/P212, matrix/range selection and frame
+  navigation.
+- **Quality**: File > Load Reference YUV computes per-frame PSNR/SSIM/MSE/MSAD for the
   open stream; the quality chart and a reference difference view show the
   result, and the metrics export as CSV. The reference must be planar
   I420/I422/I444/P010/P210/P012/P212 in display order, matching the decoded
   frame size.
 - **Compare**: File > Compare Streams opens two files side by side, with
-  display-order/POC/time synchronization and an optional difference view with
-  per-pair PSNR/SSIM.
+  display-order/POC/time synchronization and side-by-side, subtraction,
+  temperature, PSNR-clip, horizontal-split and vertical-split views; diff
+  modes show per-pair PSNR/SSIM.
 - **Overlays**: an optional slice/CTB boundary overlay on the video tab; H.265
   tile boundaries come from the PPS layout.
 - **Thumbnails**: lazy, cached thumbnail strip with GOP boundaries; prev/next
@@ -263,8 +268,8 @@ below are automated in `tests/` and run by CI on every push:
 | MPEG-TS scan | 188/192/204-byte packets, PID/stream type, PCR samples and injected CC errors detected |
 | PSNR/SSIM | per-frame values and summaries match ffmpeg psnr/ssim within rounding |
 | Conformance checks | out-of-level synthetic SPS flagged; valid H.265 vector clean |
-| Quality GUI | reference YUV loading, quality chart/difference view and CSV export compile in the Windows GUI |
-| Side-by-side compare | display-order/POC/time sync and difference view with PSNR/SSIM |
+| Quality GUI | reference YUV loading, PSNR/SSIM/MSE/MSAD, quality chart/difference view and CSV export |
+| Side-by-side compare | display-order/POC/time sync and subtraction/temperature/PSNR-clip/split views with PSNR/SSIM |
 | Thumbnail strip and GOP navigation | window creation checked by the Windows smoke test; thumbnail loading is manual |
 | Windows installer: default, custom `/D=`, `/LANG=2052`, upgrade from 0.3.0, silent uninstall | files, shortcuts, HKCU entry, version hand-off and clean removal verified |
 | Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |

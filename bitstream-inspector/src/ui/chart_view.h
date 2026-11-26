@@ -21,6 +21,7 @@ class ChartView {
   void setMode(ChartMode mode);
   ChartMode mode() const { return mode_; }
   void setQuality(const std::vector<bs::QualitySample>* samples);
+  void setBitWindow(int seconds);
   void invalidate();
 
  private:
@@ -39,6 +40,7 @@ class ChartView {
   int selected_ = -1;
   ChartMode mode_ = ChartMode::FrameSize;
   const std::vector<bs::QualitySample>* quality_ = nullptr;
+  int bit_window_sec_ = 1;
 };
 
 }  // namespace ui

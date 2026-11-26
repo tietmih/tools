@@ -69,6 +69,11 @@ void ChartView::setQuality(const std::vector<bs::QualitySample>* samples) {
   if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
+void ChartView::setBitWindow(int seconds) {
+  bit_window_sec_ = std::max(1, seconds);
+  if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
 void ChartView::setMode(ChartMode mode) {
   mode_ = mode;
   if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
@@ -308,7 +313,7 @@ void ChartView::paintBits(HDC dc, const RECT& rc) {
   TextOutW(dc, plot.left, px(2), title.c_str(), static_cast<int>(title.size()));
   double fps = stream_->fps();
   if (!(fps > 0.0)) fps = 25.0;
-  int window = std::max(1, static_cast<int>(fps + 0.5));
+  int window = std::max(1, static_cast<int>(fps * bit_window_sec_ + 0.5));
   int end = std::min(static_cast<int>(count), std::max(0, selected_) + 1);
   int start = std::max(0, end - window);
   double rate = stream_->windowBitrate(start, end);
