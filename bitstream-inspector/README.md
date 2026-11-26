@@ -46,16 +46,21 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
   decoded against the parameter set that was active at that point.
 - **Hex view**: raw NAL bytes with the selected syntax field highlighted.
 - **Video tab**: decodes the selected frame on a background thread. Exact frame
-  for container inputs (PTS-matched); nearest keyframe for raw streams that
-  carry no timestamps.
-- **Charts**: per-frame size bar chart with picture-type strip; click to jump.
-- **Navigation**: previous/next frame, previous/next keyframe, keyboard
-  shortcuts, draggable splitters, layout persisted in
+  for containers and raw elementary streams (decoded from the GOP start).
+  Hovering shows Y/Cb/Cr and RGB values; colour matrix and range can be
+  overridden for the preview only.
+- **Charts**: frame-size bars with a picture-type strip, or CPB0 occupancy.
+  Click to jump.
+- **Thumbnails**: lazy, cached thumbnail strip with GOP boundaries; prev/next
+  GOP navigation.
+- **Navigation**: previous/next frame, previous/next keyframe, previous/next
+  GOP, keyboard shortcuts, draggable splitters, layout persisted in
   `%APPDATA%\BitstreamInspector\settings.ini`.
 - **Bilingual UI**: switch between English and Simplified Chinese at runtime
   from the Language menu. The choice is persisted. Specification terms (NAL
   types, SPS/PPS/VPS, syntax field names, codec/profile names) stay in English.
-- **Export**: frame list and NAL list as CSV (UTF-8 with BOM).
+- **Export**: frame/NAL lists and the CPB model as CSV (UTF-8 with BOM); the
+  current frame as PNG/BMP or native planar YUV.
 
 ## Install on Windows
 
@@ -212,6 +217,7 @@ bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB occupancy model
 ```bash
 mtest movie.mp4                       # container info, packet map, frame timing
 mtest movie.mkv --frame 10 --ppm out.ppm
+mtest stream.h264 --frame 5 --yuv frame.yuv   # native planar YUV
 ```
 
 ## Verification status
@@ -228,6 +234,9 @@ below are automated in `tests/` and run by CI on every push:
 | ASan + UBSan over all test streams, mutation fuzz (200 per CI run, 3000 nightly) | no findings |
 | Windows runtime: container open, frame navigation, splitter drag, CSV export, layout persistence | verified by screenshot/automation |
 | CPB0 model on x264/x265 CBR and injected underflow | flat occupancy, no underflow; a 100 KB SEI is detected from frame 10 |
+| Raw ES exact frame vs ffmpeg (GOP start decode) | frame 5 pixel-identical, including B pictures |
+| Native YUV export vs ffmpeg rawvideo (8/10-bit) | byte-identical planes |
+| Thumbnail strip and GOP navigation | window creation checked by the Windows smoke test; thumbnail loading is manual |
 | Windows installer: default, custom `/D=`, `/LANG=2052`, upgrade from 0.3.0, silent uninstall | files, shortcuts, HKCU entry, version hand-off and clean removal verified |
 | Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |
 
@@ -236,10 +245,10 @@ containers.
 
 ## Known limitations
 
-- Raw elementary streams have no timestamps, so the video tab shows the nearest
-  keyframe (labelled) instead of the exact frame. Container inputs are exact.
-- No thumbnail strip, slice/CTU overlay, DPB/GOP graph, or macroblock-level
-  entropy decoding yet.
+- Raw elementary streams have no timestamps; the video tab decodes from the
+  GOP start to show the exact selected picture, including B pictures. Field
+  pictures are shown as separate pictures.
+- No slice/CTU overlay, DPB/GOP graph, or macroblock-level entropy decoding yet.
 - The CPB model covers CPB0 from SPS VUI HRD; sub-picture, multiple CPBs and
   concatenation are not modelled. Missing delays are marked as estimated, and
   streams without HRD get a labelled average-bitrate estimate.

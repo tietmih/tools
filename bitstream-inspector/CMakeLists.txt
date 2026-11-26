@@ -120,15 +120,17 @@ if(WIN32)
         src/ui/main.cpp
         src/ui/frame_list.cpp
         src/ui/syntax_tree.cpp
+        src/ui/thumbnail_strip.cpp
         src/ui/hex_view.cpp
         src/ui/video_view.cpp
         src/ui/chart_view.cpp
+        src/ui/image_export.cpp
         src/ui/lang.cpp
         src/ui/ui_util.cpp
         res/app.rc
     )
     target_link_libraries(bsinspector PRIVATE bs_core
-        comctl32 comdlg32 gdi32 user32 shell32)
+        comctl32 comdlg32 gdi32 user32 shell32 windowscodecs ole32)
     if(BS_MEDIA_TARGET)
         target_link_libraries(bsinspector PRIVATE ${BS_MEDIA_TARGET})
     endif()

@@ -18,6 +18,9 @@ using System.Runtime.InteropServices;
 public static class Win32 {
     [DllImport("user32.dll")]
     public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after,
+                                             string className, string title);
 }
 "@
 
@@ -175,6 +178,11 @@ if ($gui.MainWindowHandle -eq 0) {
     throw "bsinspector.exe did not create a main window"
 }
 $hwnd = $gui.MainWindowHandle
+$thumbStrip = [Win32]::FindWindowEx($hwnd, [IntPtr]::Zero,
+                                    'BsThumbnailStrip', $null)
+if ($thumbStrip -eq [IntPtr]::Zero) {
+    throw "thumbnail strip window was not created"
+}
 
 function Wait-Setting([string]$Path, [string]$Pattern) {
     $limit = (Get-Date).AddSeconds(10)

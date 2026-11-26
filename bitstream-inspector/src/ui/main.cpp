@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <deque>
 #include <iterator>
 #include <memory>
 #include <string>
@@ -15,8 +16,10 @@
 #include "ui/chart_view.h"
 #include "ui/frame_list.h"
 #include "ui/hex_view.h"
+#include "ui/image_export.h"
 #include "ui/lang.h"
 #include "ui/syntax_tree.h"
+#include "ui/thumbnail_strip.h"
 #include "ui/ui_util.h"
 #include "ui/video_view.h"
 #ifdef BS_HAVE_FFMPEG
@@ -41,12 +44,15 @@ enum : int {
   IDC_CHART = 1013,
   IDC_TAB = 1014,
   IDC_VIDEO_VIEW = 1015,
+  IDC_THUMBNAILS = 1016,
 
   IDM_FILE_OPEN = 2001,
   IDM_FILE_EXIT = 2002,
   IDM_FILE_EXPORT_FRAMES = 2003,
   IDM_FILE_EXPORT_NALS = 2004,
   IDM_FILE_EXPORT_CPB = 2005,
+  IDM_FILE_EXPORT_IMAGE = 2006,
+  IDM_FILE_EXPORT_YUV = 2007,
   IDM_VIEW_PREV = 2101,
   IDM_VIEW_NEXT = 2102,
   IDM_VIEW_RELOAD = 2103,
@@ -54,6 +60,15 @@ enum : int {
   IDM_VIEW_NEXT_KEY = 2105,
   IDM_VIEW_CHART_SIZE = 2106,
   IDM_VIEW_CHART_CPB = 2107,
+  IDM_VIEW_MATRIX_AUTO = 2108,
+  IDM_VIEW_MATRIX_601 = 2109,
+  IDM_VIEW_MATRIX_709 = 2110,
+  IDM_VIEW_MATRIX_2020 = 2111,
+  IDM_VIEW_RANGE_AUTO = 2112,
+  IDM_VIEW_RANGE_LIMITED = 2113,
+  IDM_VIEW_RANGE_FULL = 2114,
+  IDM_VIEW_PREV_GOP = 2115,
+  IDM_VIEW_NEXT_GOP = 2116,
   IDM_HELP_ABOUT = 2201,
   IDM_LANG_EN = 2301,
   IDM_LANG_ZH = 2302,
@@ -96,6 +111,7 @@ struct App {
   HexView hex_view;
   VideoView video_view;
   ChartView chart;
+  ThumbnailStrip thumbnails;
   HWND tabs = nullptr;
   int active_tab = 1;  // 0 = Hex, 1 = Video
   int video_frame = -1;
@@ -108,8 +124,18 @@ struct App {
   int video_request = -1;
   int video_request_gen = 0;
   std::atomic<int> video_generation{0};
+  // Background thumbnail worker.
+  HANDLE thumb_thread = nullptr;
+  HANDLE thumb_event = nullptr;
+  HANDLE thumb_stop_event = nullptr;
+  CRITICAL_SECTION thumb_lock = {};
+  bool thumb_lock_ready = false;
+  std::deque<std::pair<int, int>> thumb_queue;  // frame, generation
+  int thumb_inflight = -1;
+  std::atomic<int> thumb_generation{0};
 #ifdef BS_HAVE_FFMPEG
   std::unique_ptr<MediaFile> media;
+  std::unique_ptr<MediaFile> thumb_media;
   ContainerInfo container;
 #endif
   Stream stream;
@@ -119,6 +145,8 @@ struct App {
   // Layout ratios and splitter drag state.
   float left_ratio = 0.43f;
   float tree_ratio = 0.55f;
+  int preview_matrix = -1;  // -1 = VUI/auto
+  int preview_range = -1;   // -1 = VUI, 0 = limited, 1 = full
   int drag = 0;
   int drag_offset = 0;
   RECT split_left = {};
@@ -130,17 +158,30 @@ struct App {
 App g_app;
 
 constexpr UINT WM_APP_VIDEO_READY = WM_APP + 20;
+constexpr UINT WM_APP_THUMB_READY = WM_APP + 22;
 
 struct VideoResult {
-  std::vector<uint8_t> bgra;
-  int width = 0;
-  int height = 0;
+  ImageData image;
   int frame = -1;
   int generation = -1;
   bool keyframe_only = false;
   bool ok = false;
   std::string error;
 };
+
+struct ThumbResult {
+  std::vector<uint8_t> bgra;
+  int width = 0;
+  int height = 0;
+  int frame = -1;
+  int generation = -1;
+  bool ok = false;
+  std::string error;
+};
+
+void requestThumbnail(int frame);
+void startThumbWorker();
+void stopThumbWorker();
 
 void requestVideo(int frame);
 void startVideoWorker();
@@ -284,6 +325,26 @@ std::wstring streamInfoText() {
   return summary;
 }
 
+void applyPreviewColour() {
+#ifdef BS_HAVE_FFMPEG
+  if (!g_app.media) return;
+  int matrix = g_app.preview_matrix;
+  if (matrix < 0) {
+    matrix = g_app.stream.colourDescription().present
+                 ? g_app.stream.colourDescription().matrix
+                 : 1;
+  }
+  bool full_range = g_app.preview_range < 0 ? g_app.stream.videoFullRange()
+                                            : g_app.preview_range == 1;
+  if (g_app.preview_matrix < 0 && g_app.preview_range < 0)
+    g_app.media->clearPreviewColour();
+  else
+    g_app.media->setPreviewColour(matrix, full_range);
+  g_app.video_frame = -1;
+  if (g_app.current_frame >= 0) requestVideo(g_app.current_frame);
+#endif
+}
+
 void createMenu(HWND hwnd) {
   HMENU menu = CreateMenu();
   HMENU file = CreatePopupMenu();
@@ -297,6 +358,12 @@ void createMenu(HWND hwnd) {
               tr(L"Export &NAL List (CSV)...", L"导出 NAL 列表 CSV(&N)..."));
   AppendMenuW(file, MF_STRING, IDM_FILE_EXPORT_CPB,
               tr(L"Export &CPB Model (CSV)...", L"导出 CPB 模型 CSV(&C)..."));
+  AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(
+      file, MF_STRING, IDM_FILE_EXPORT_IMAGE,
+      tr(L"Export Frame &Image (PNG/BMP)...", L"导出当前画面 PNG/BMP(&I)..."));
+  AppendMenuW(file, MF_STRING, IDM_FILE_EXPORT_YUV,
+              tr(L"Export Frame &YUV...", L"导出当前帧 YUV(&Y)..."));
   AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(file, MF_STRING, IDM_FILE_EXIT, tr(L"E&xit", L"退出(&X)"));
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file),
@@ -314,6 +381,10 @@ void createMenu(HWND hwnd) {
   AppendMenuW(
       view, MF_STRING, IDM_VIEW_NEXT_KEY,
       tr(L"Next K&eyframe\tShift+Right", L"下一个关键帧(&E)\tShift+Right"));
+  AppendMenuW(view, MF_STRING, IDM_VIEW_PREV_GOP,
+              tr(L"Previous &GOP", L"上一个 GOP(&G)"));
+  AppendMenuW(view, MF_STRING, IDM_VIEW_NEXT_GOP,
+              tr(L"Next G&OP", L"下一个 GOP(&O)"));
   AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(view, MF_STRING, IDM_VIEW_CHART_SIZE,
               tr(L"Chart: &Frame Size", L"图表：帧大小(&F)"));
@@ -321,6 +392,24 @@ void createMenu(HWND hwnd) {
               tr(L"Chart: &CPB Occupancy", L"图表：CPB 占用(&C)"));
   CheckMenuRadioItem(view, IDM_VIEW_CHART_SIZE, IDM_VIEW_CHART_CPB,
                      IDM_VIEW_CHART_SIZE, MF_BYCOMMAND);
+
+  HMENU matrix = CreatePopupMenu();
+  AppendMenuW(matrix, MF_STRING, IDM_VIEW_MATRIX_AUTO,
+              tr(L"Auto (VUI)", L"自动（VUI）"));
+  AppendMenuW(matrix, MF_STRING, IDM_VIEW_MATRIX_601, L"BT.601");
+  AppendMenuW(matrix, MF_STRING, IDM_VIEW_MATRIX_709, L"BT.709");
+  AppendMenuW(matrix, MF_STRING, IDM_VIEW_MATRIX_2020, L"BT.2020");
+  AppendMenuW(view, MF_POPUP, reinterpret_cast<UINT_PTR>(matrix),
+              tr(L"Colour &Matrix", L"色彩矩阵(&M)"));
+
+  HMENU range = CreatePopupMenu();
+  AppendMenuW(range, MF_STRING, IDM_VIEW_RANGE_AUTO,
+              tr(L"Auto (VUI)", L"自动（VUI）"));
+  AppendMenuW(range, MF_STRING, IDM_VIEW_RANGE_LIMITED,
+              tr(L"Limited", L"Limited"));
+  AppendMenuW(range, MF_STRING, IDM_VIEW_RANGE_FULL, tr(L"Full", L"Full"));
+  AppendMenuW(view, MF_POPUP, reinterpret_cast<UINT_PTR>(range),
+              tr(L"Colour &Range", L"色彩范围(&R)"));
   AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(view, MF_STRING, IDM_VIEW_RELOAD,
               tr(L"&Reload\tF5", L"重新加载(&R)\tF5"));
@@ -522,12 +611,15 @@ void layout(HWND hwnd) {
 
   int top = y + btn_h + pad;
   int chart_h = px(150);
+  int thumb_h = px(68);
   int bottom_limit = static_cast<int>(rc.bottom) - status_h;
   int chart_top = bottom_limit - pad - chart_h;
-  int list_h = chart_top - pad - top;
+  int thumb_top = chart_top - pad - thumb_h;
+  int list_h = thumb_top - pad - top;
   if (list_h < px(140)) {
     list_h = px(140);
-    chart_top = top + list_h + pad;
+    thumb_top = top + list_h + pad;
+    chart_top = thumb_top + thumb_h + pad;
   }
 
   int content_w = static_cast<int>(rc.right) - 3 * pad;
@@ -565,6 +657,8 @@ void layout(HWND hwnd) {
     ShowWindow(g_app.video_view.hwnd(),
                g_app.active_tab == 1 ? SW_SHOW : SW_HIDE);
   }
+  MoveWindow(g_app.thumbnails.hwnd(), pad, thumb_top,
+             std::max(0, static_cast<int>(rc.right) - 2 * pad), thumb_h, TRUE);
   MoveWindow(g_app.chart.hwnd(), pad, chart_top,
              std::max(0, static_cast<int>(rc.right) - 2 * pad), chart_h, TRUE);
 
@@ -603,6 +697,7 @@ void resetUi() {
   EnableWindow(g_app.btn_next_key, FALSE);
   g_app.frame_list.setStream(nullptr);
   g_app.chart.setStream(nullptr);
+  g_app.thumbnails.setStream(nullptr);
   g_app.syntax_tree.clear();
   g_app.hex_view.clear();
 #ifdef BS_HAVE_FFMPEG
@@ -651,9 +746,21 @@ DWORD WINAPI videoWorkerProc(LPVOID) {
     result->generation = generation;
 #ifdef BS_HAVE_FFMPEG
     if (g_app.media) {
+      DecodedFrame decoded;
       result->ok = g_app.media->decodeFrameAt(
-          g_app.stream, frame, result->bgra, result->width, result->height,
-          result->keyframe_only, result->error);
+          g_app.stream, frame, decoded, result->keyframe_only, result->error);
+      if (result->ok) {
+        result->image.bgra = std::move(decoded.bgra);
+        result->image.width = decoded.width;
+        result->image.height = decoded.height;
+        result->image.bit_depth = decoded.bit_depth;
+        result->image.chroma_format = decoded.chroma_format;
+        result->image.matrix = decoded.matrix;
+        result->image.full_range = decoded.full_range;
+        result->image.layout = decoded.layout;
+        result->image.planes = std::move(decoded.planes);
+        result->image.strides = std::move(decoded.strides);
+      }
     } else {
       result->error = "no media";
     }
@@ -713,6 +820,95 @@ void requestVideo(int frame) {
 #endif
 }
 
+DWORD WINAPI thumbWorkerProc(LPVOID) {
+  for (;;) {
+    HANDLE handles[2] = {g_app.thumb_stop_event, g_app.thumb_event};
+    DWORD wait = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+    if (wait == WAIT_OBJECT_0) break;
+    if (wait != WAIT_OBJECT_0 + 1) continue;
+    int frame = -1;
+    int generation = -1;
+    EnterCriticalSection(&g_app.thumb_lock);
+    if (!g_app.thumb_queue.empty()) {
+      frame = g_app.thumb_queue.front().first;
+      generation = g_app.thumb_queue.front().second;
+      g_app.thumb_queue.pop_front();
+      g_app.thumb_inflight = frame;
+    }
+    LeaveCriticalSection(&g_app.thumb_lock);
+    if (frame < 0) continue;
+
+    auto* result = new ThumbResult();
+    result->frame = frame;
+    result->generation = generation;
+#ifdef BS_HAVE_FFMPEG
+    if (g_app.thumb_media) {
+      result->ok = g_app.thumb_media->decodeThumbnailAt(
+          g_app.stream, frame, 96, 54, result->bgra, result->error);
+      result->width = 96;
+      result->height = 54;
+    } else {
+      result->error = "no thumbnail decoder";
+    }
+#else
+    result->error = "FFmpeg media layer not built";
+#endif
+    PostMessageW(g_app.hwnd, WM_APP_THUMB_READY, 0,
+                 reinterpret_cast<LPARAM>(result));
+  }
+  return 0;
+}
+
+void startThumbWorker() {
+  if (g_app.thumb_thread || !g_app.thumb_event || !g_app.thumb_stop_event)
+    return;
+  ResetEvent(g_app.thumb_stop_event);
+  g_app.thumb_thread =
+      CreateThread(nullptr, 0, thumbWorkerProc, nullptr, 0, nullptr);
+}
+
+void stopThumbWorker() {
+  if (g_app.thumb_thread) {
+    SetEvent(g_app.thumb_stop_event);
+    WaitForSingleObject(g_app.thumb_thread, INFINITE);
+    CloseHandle(g_app.thumb_thread);
+    g_app.thumb_thread = nullptr;
+  }
+  g_app.thumb_generation.fetch_add(1);
+  if (g_app.thumb_lock_ready) {
+    EnterCriticalSection(&g_app.thumb_lock);
+    g_app.thumb_queue.clear();
+    g_app.thumb_inflight = -1;
+    LeaveCriticalSection(&g_app.thumb_lock);
+  }
+  if (g_app.thumb_event) ResetEvent(g_app.thumb_event);
+  if (g_app.thumb_stop_event) ResetEvent(g_app.thumb_stop_event);
+}
+
+void requestThumbnail(int frame) {
+#ifdef BS_HAVE_FFMPEG
+  if (!g_app.thumb_media || frame < 0) return;
+  if (g_app.thumb_thread) {
+    EnterCriticalSection(&g_app.thumb_lock);
+    if (g_app.thumb_inflight == frame) {
+      LeaveCriticalSection(&g_app.thumb_lock);
+      return;
+    }
+    for (const auto& queued : g_app.thumb_queue) {
+      if (queued.first == frame) {
+        LeaveCriticalSection(&g_app.thumb_lock);
+        return;
+      }
+    }
+    g_app.thumb_queue.emplace_back(frame, g_app.thumb_generation.load());
+    LeaveCriticalSection(&g_app.thumb_lock);
+    SetEvent(g_app.thumb_event);
+  }
+#else
+  (void)frame;
+#endif
+}
+
 void applyLanguage(HWND hwnd) {
   HMENU old_menu = GetMenu(hwnd);
   createMenu(hwnd);
@@ -762,6 +958,7 @@ void onFrameSelected(int index) {
   g_app.hex_view.clear();
   g_app.syntax_tree.setFrame(&g_app.stream, index);
   g_app.chart.setSelected(index);
+  g_app.thumbnails.setSelected(index);
   EnableWindow(g_app.btn_prev, index > 0);
   EnableWindow(g_app.btn_next,
                index < static_cast<int>(g_app.stream.frames().size()) - 1);
@@ -798,6 +995,22 @@ void selectKeyframe(int direction) {
   int target =
       findKeyframe(g_app.stream.frames(), g_app.current_frame, direction);
   if (target >= 0) selectFrame(target);
+}
+
+void selectGop(int direction) {
+  if (!g_app.loaded || g_app.current_frame < 0) return;
+  const auto& frames = g_app.stream.frames();
+  const int current = g_app.current_frame;
+  const int gop = frames[static_cast<size_t>(current)].gop_start;
+  if (gop < 0) return;
+  if (direction < 0) {
+    if (gop == 0) return;
+    selectFrame(frames[static_cast<size_t>(gop - 1)].gop_start);
+    return;
+  }
+  size_t end = static_cast<size_t>(gop);
+  while (end < frames.size() && frames[end].gop_start == gop) end++;
+  if (end < frames.size()) selectFrame(frames[end].gop_start);
 }
 
 void openFile(const std::wstring& path) {
@@ -853,6 +1066,7 @@ void openFile(const std::wstring& path) {
     return;  // keep the previously loaded stream
   }
   stopVideoWorker();
+  stopThumbWorker();
   g_app.stream = std::move(loaded);
   g_app.loaded = true;
   g_app.path = path;
@@ -861,6 +1075,17 @@ void openFile(const std::wstring& path) {
 #ifdef BS_HAVE_FFMPEG
   g_app.media = std::move(media);
   g_app.container = g_app.media ? g_app.media->info() : ContainerInfo();
+  g_app.thumb_media.reset();
+  {
+    auto thumb = std::make_unique<MediaFile>();
+    std::vector<uint8_t> thumb_es;
+    std::string thumb_error;
+    if (thumb->open(utf8(path), thumb_error) &&
+        thumb->extractAnnexB(thumb_es, thumb_error)) {
+      g_app.thumb_media = std::move(thumb);
+    }
+  }
+  applyPreviewColour();
 #endif
   SetWindowTextW(g_app.hwnd,
                  (std::wstring(kTitle) + L" - " + baseName(path)).c_str());
@@ -872,11 +1097,13 @@ void openFile(const std::wstring& path) {
   g_app.frame_list.setStream(&g_app.stream);
   g_app.frame_list.refresh();
   g_app.chart.setStream(&g_app.stream);
+  g_app.thumbnails.setStream(&g_app.stream);
   g_app.syntax_tree.clear();
   g_app.hex_view.clear();
   g_app.video_view.clear(tr(L"Select a frame to decode", L"选择一帧进行解码"));
 
   startVideoWorker();
+  startThumbWorker();
   selectFrame(0);
   updateStatus();
 }
@@ -899,6 +1126,80 @@ std::wstring defaultExportName(const wchar_t* suffix) {
   size_t dot = name.find_last_of(L'.');
   if (dot != std::wstring::npos && dot > 0) name.resize(dot);
   return name + suffix;
+}
+
+std::wstring frameExportName(const wchar_t* extension) {
+  std::wstring name = defaultExportName(L"");
+  return name + L"_frame" + std::to_wstring(g_app.current_frame) + extension;
+}
+
+void exportImage() {
+  const ImageData& image = g_app.video_view.image();
+  if (image.bgra.empty()) {
+    MessageBoxW(g_app.hwnd,
+                tr(L"Select a decoded frame before exporting.",
+                   L"请先选择一帧并等待解码完成。"),
+                kTitle, MB_OK | MB_ICONINFORMATION);
+    return;
+  }
+  std::wstring default_name = frameExportName(L".png");
+  wchar_t file[32768] = {};
+  lstrcpynW(file, default_name.c_str(), 32768);
+  OPENFILENAMEW ofn = {};
+  ofn.lStructSize = sizeof(ofn);
+  ofn.hwndOwner = g_app.hwnd;
+  ofn.lpstrFilter =
+      tr(L"PNG image (*.png)\0*.png\0BMP image (*.bmp)\0*.bmp\0All files "
+         L"(*.*)\0*.*\0",
+         L"PNG 图像 (*.png)\0*.png\0BMP 图像 (*.bmp)\0*.bmp\0所有文件 "
+         L"(*.*)\0*.*\0");
+  ofn.lpstrFile = file;
+  ofn.nMaxFile = 32768;
+  ofn.lpstrDefExt = L"png";
+  ofn.lpstrTitle = tr(L"Export frame image", L"导出当前画面");
+  ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_EXPLORER;
+  if (!GetSaveFileNameW(&ofn)) return;
+  std::string error;
+  if (!writeImageFile(file, image, error)) {
+    MessageBoxW(g_app.hwnd, wide(error).c_str(),
+                tr(L"Export failed", L"导出失败"), MB_OK | MB_ICONERROR);
+    return;
+  }
+  MessageBoxW(g_app.hwnd, tr(L"Image exported.", L"画面已导出。"),
+              tr(L"Export complete", L"导出完成"), MB_OK | MB_ICONINFORMATION);
+}
+
+void exportYuv() {
+  const ImageData& image = g_app.video_view.image();
+  if (image.planes.empty()) {
+    MessageBoxW(g_app.hwnd,
+                tr(L"Select a decoded frame before exporting.",
+                   L"请先选择一帧并等待解码完成。"),
+                kTitle, MB_OK | MB_ICONINFORMATION);
+    return;
+  }
+  std::wstring default_name = frameExportName(L".yuv");
+  wchar_t file[32768] = {};
+  lstrcpynW(file, default_name.c_str(), 32768);
+  OPENFILENAMEW ofn = {};
+  ofn.lStructSize = sizeof(ofn);
+  ofn.hwndOwner = g_app.hwnd;
+  ofn.lpstrFilter = tr(L"Raw YUV (*.yuv)\0*.yuv\0All files (*.*)\0*.*\0",
+                       L"原始 YUV (*.yuv)\0*.yuv\0所有文件 (*.*)\0*.*\0");
+  ofn.lpstrFile = file;
+  ofn.nMaxFile = 32768;
+  ofn.lpstrDefExt = L"yuv";
+  ofn.lpstrTitle = tr(L"Export raw YUV frame", L"导出当前帧 YUV");
+  ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_EXPLORER;
+  if (!GetSaveFileNameW(&ofn)) return;
+  std::string error;
+  if (!writeRawYuv(file, image, error)) {
+    MessageBoxW(g_app.hwnd, wide(error).c_str(),
+                tr(L"Export failed", L"导出失败"), MB_OK | MB_ICONERROR);
+    return;
+  }
+  MessageBoxW(g_app.hwnd, tr(L"YUV frame exported.", L"YUV 已导出。"),
+              tr(L"Export complete", L"导出完成"), MB_OK | MB_ICONINFORMATION);
 }
 
 enum class ExportKind { Frames, Nals, Cpb };
@@ -962,6 +1263,10 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
       g_app.video_lock_ready = true;
       g_app.video_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
       g_app.video_stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+      InitializeCriticalSection(&g_app.thumb_lock);
+      g_app.thumb_lock_ready = true;
+      g_app.thumb_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+      g_app.thumb_stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
       loadSettings();
       DragAcceptFiles(hwnd, TRUE);
       createMenu(hwnd);
@@ -1012,6 +1317,8 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
       TabCtrl_SetCurSel(g_app.tabs, g_app.active_tab);
       g_app.video_view.create(hwnd, g_app.inst, IDC_VIDEO_VIEW);
       g_app.chart.create(hwnd, g_app.inst, IDC_CHART);
+      g_app.thumbnails.create(hwnd, g_app.inst, IDC_THUMBNAILS);
+      g_app.thumbnails.setRequestHandler(requestThumbnail);
       layout(hwnd);
       resetUi();
       startVideoWorker();
@@ -1062,6 +1369,12 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         case IDM_VIEW_NEXT_KEY:
           selectKeyframe(1);
           return 0;
+        case IDM_VIEW_PREV_GOP:
+          selectGop(-1);
+          return 0;
+        case IDM_VIEW_NEXT_GOP:
+          selectGop(1);
+          return 0;
         case IDM_FILE_EXPORT_FRAMES:
           exportCsv(ExportKind::Frames);
           return 0;
@@ -1070,6 +1383,40 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
           return 0;
         case IDM_FILE_EXPORT_CPB:
           exportCsv(ExportKind::Cpb);
+          return 0;
+        case IDM_FILE_EXPORT_IMAGE:
+          exportImage();
+          return 0;
+        case IDM_FILE_EXPORT_YUV:
+          exportYuv();
+          return 0;
+        case IDM_VIEW_MATRIX_AUTO:
+          g_app.preview_matrix = -1;
+          applyPreviewColour();
+          return 0;
+        case IDM_VIEW_MATRIX_601:
+          g_app.preview_matrix = 5;
+          applyPreviewColour();
+          return 0;
+        case IDM_VIEW_MATRIX_709:
+          g_app.preview_matrix = 1;
+          applyPreviewColour();
+          return 0;
+        case IDM_VIEW_MATRIX_2020:
+          g_app.preview_matrix = 9;
+          applyPreviewColour();
+          return 0;
+        case IDM_VIEW_RANGE_AUTO:
+          g_app.preview_range = -1;
+          applyPreviewColour();
+          return 0;
+        case IDM_VIEW_RANGE_LIMITED:
+          g_app.preview_range = 0;
+          applyPreviewColour();
+          return 0;
+        case IDM_VIEW_RANGE_FULL:
+          g_app.preview_range = 1;
+          applyPreviewColour();
           return 0;
         case IDM_VIEW_CHART_SIZE:
           g_app.chart.setMode(ChartView::ChartMode::FrameSize);
@@ -1159,14 +1506,39 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
             if (result->keyframe_only)
               note = tr(L"Keyframe preview (raw stream has no timestamps)",
                         L"关键帧预览（裸流不含时间戳）");
-            g_app.video_view.setImage(std::move(result->bgra), result->width,
-                                      result->height, note);
+            g_app.video_view.setImage(std::move(result->image), note);
           }
         }
         delete result;
       }
       return 0;
     }
+
+    case WM_APP_THUMB_READY: {
+      auto* result = reinterpret_cast<ThumbResult*>(lparam);
+      if (result) {
+        if (g_app.thumb_lock_ready) {
+          EnterCriticalSection(&g_app.thumb_lock);
+          if (g_app.thumb_inflight == result->frame) g_app.thumb_inflight = -1;
+          LeaveCriticalSection(&g_app.thumb_lock);
+        }
+        if (result->ok && result->generation == g_app.thumb_generation.load() &&
+            result->frame >= 0 &&
+            result->frame < static_cast<int>(g_app.stream.frames().size())) {
+          ThumbnailStrip::Thumb thumb;
+          thumb.bgra = std::move(result->bgra);
+          thumb.width = result->width;
+          thumb.height = result->height;
+          g_app.thumbnails.setThumbnail(result->frame, std::move(thumb));
+        }
+        delete result;
+      }
+      return 0;
+    }
+
+    case WM_APP_THUMBNAIL_SELECTED:
+      selectFrame(static_cast<int>(wparam));
+      return 0;
 
     case WM_PAINT: {
       PAINTSTRUCT ps;
@@ -1290,6 +1662,19 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 
     case WM_DESTROY:
       stopVideoWorker();
+      stopThumbWorker();
+      if (g_app.thumb_event) {
+        CloseHandle(g_app.thumb_event);
+        g_app.thumb_event = nullptr;
+      }
+      if (g_app.thumb_stop_event) {
+        CloseHandle(g_app.thumb_stop_event);
+        g_app.thumb_stop_event = nullptr;
+      }
+      if (g_app.thumb_lock_ready) {
+        DeleteCriticalSection(&g_app.thumb_lock);
+        g_app.thumb_lock_ready = false;
+      }
       if (g_app.video_event) {
         CloseHandle(g_app.video_event);
         g_app.video_event = nullptr;

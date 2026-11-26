@@ -40,14 +40,18 @@ Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表�
 - **语法树**：SPS/PPS/VPS/SEI/slice header 的每个字段及精确位范围。参数集按
   access unit 快照，因此早期帧会用当时有效的参数集重建语法树。
 - **十六进制视图**：显示 NAL 原始字节，选中语法字段时高亮对应字节。
-- **画面页**：后台线程解码选中的帧。容器输入按 PTS 精确取帧；无时间戳的裸流
-  显示最近关键帧并给出提示。
-- **图表**：逐帧大小柱状图 + 帧类型色带，点击跳帧。
-- **导航**：上一帧/下一帧、上一个/下一个关键帧、键盘快捷键、可拖拽分栏；
-  布局保存在 `%APPDATA%\BitstreamInspector\settings.ini`。
+- **画面页**：后台线程解码选中的帧。容器和无时间戳裸流都显示精确目标帧（裸流
+  从 GOP 起点顺序解码）。鼠标悬停显示 Y/Cb/Cr 和 RGB；色彩矩阵与范围可覆盖，
+  仅影响预览。
+- **图表**：逐帧大小柱状图 + 帧类型色带，或 CPB0 占用曲线；点击跳帧。
+- **缩略图**：懒加载、带缓存的缩略图条，标出 GOP 边界；支持上一个/下一个 GOP。
+- **导航**：上一帧/下一帧、上一个/下一个关键帧、上一个/下一个 GOP、键盘
+  快捷键、可拖拽分栏；布局保存在
+  `%APPDATA%\BitstreamInspector\settings.ini`。
 - **双语界面**：通过“语言”菜单在运行时切换英文/简体中文，选择会被持久化。
   标准术语（NAL 类型、SPS/PPS/VPS、语法字段名、编码/profile 名称）保持英文。
-- **导出**：帧列表和 NAL 列表导出为 CSV（UTF-8 带 BOM）。
+- **导出**：帧列表、NAL 列表和 CPB 模型导出为 CSV（UTF-8 带 BOM）；当前帧
+  导出 PNG/BMP 或原生 planar YUV。
 
 ## Windows 安装
 
@@ -196,6 +200,7 @@ bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB 占用模型
 ```bash
 mtest movie.mp4                       # 容器信息、packet 映射、帧时间
 mtest movie.mkv --frame 10 --ppm out.ppm
+mtest stream.h264 --frame 5 --yuv frame.yuv   # 原生 planar YUV
 ```
 
 ## 验证状态
@@ -212,6 +217,9 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 | 全部测试流跑 ASan + UBSan，变异 fuzz（CI 每轮 200、夜间 3000） | 无问题 |
 | Windows 运行时：容器打开、帧导航、分栏拖拽、CSV 导出、布局持久化 | 截图/自动化验证 |
 | CPB0 模型：x264/x265 CBR 与注入下溢 | 曲线平稳、无下溢；注入 100 KB SEI 后从第 10 帧检出 |
+| 裸流精确帧 vs ffmpeg（从 GOP 起点解码） | 第 5 帧逐像素一致，含 B 帧 |
+| 原生 YUV 导出 vs ffmpeg rawvideo（8/10-bit） | 平面逐字节一致 |
+| 缩略图条和 GOP 导航 | Windows 冒烟测试检查窗口创建；缩略图加载为手动验证 |
 | Windows 安装器：默认安装、自定义 `/D=`、`/LANG=2052`、从 0.3.0 升级、静默卸载 | 文件、快捷方式、HKCU 卸载项、版本交接和清理均验证 |
 | 运行时中英文切换及重启后保持 | 自动化/截图验证 |
 
@@ -219,9 +227,9 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 
 ## 已知限制
 
-- 裸流没有时间戳，画面页显示最近的关键帧（带提示），不是精确目标帧；容器输入
-  是精确的。
-- 还没有缩略图条、slice/CTU 覆盖层、DPB/GOP 图和宏块级熵解码。
+- 裸流没有时间戳；画面页从 GOP 起点解码，显示精确目标帧（包括 B 帧）。场图像
+  按独立图像显示。
+- 还没有 slice/CTU 覆盖层、DPB/GOP 图和宏块级熵解码。
 - CPB 模型覆盖 SPS VUI HRD 的 CPB0；不支持 sub-picture、多 CPB 和
   concatenation。缺失的延迟会标记为估算值，没有 HRD 的流会给出带标注的平均码率
   估算。

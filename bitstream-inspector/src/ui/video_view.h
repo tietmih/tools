@@ -6,29 +6,59 @@
 #include <string>
 #include <vector>
 
+#include "core/yuv.h"
+
 namespace ui {
 
-// Displays one decoded frame (BGRA, top-down) with letterboxing. Also used for
-// keyframe previews; overlays can be drawn on top later.
+struct ImageData {
+  std::vector<uint8_t> bgra;
+  int width = 0;
+  int height = 0;
+  int bit_depth = 8;
+  int chroma_format = 1;  // 1 = 4:2:0, 2 = 4:2:2, 3 = 4:4:4
+  int matrix = 2;
+  bool full_range = false;
+  bs::YuvLayout layout = bs::YuvLayout::None;
+  std::vector<std::vector<uint8_t>> planes;  // Y, Cb, Cr
+  std::vector<int> strides;
+};
+
+// Displays one decoded frame (BGRA, top-down) with letterboxing and a pixel
+// probe over the native YUV planes.
 class VideoView {
  public:
   void create(HWND parent, HINSTANCE inst, int id);
   HWND hwnd() const { return hwnd_; }
-  void setImage(std::vector<uint8_t> bgra, int width, int height,
-                const std::wstring& note);
+  void setImage(ImageData image, const std::wstring& note);
   void clear(const std::wstring& message = L"");
   void paintNow();
+  const ImageData& image() const { return image_; }
 
  private:
+  struct Probe {
+    bool valid = false;
+    int x = 0;
+    int y = 0;
+    int y_value = 0;
+    int cb = 0;
+    int cr = 0;
+    int r = 0;
+    int g = 0;
+    int b = 0;
+  };
+
   static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam,
                                   LPARAM lparam);
   LRESULT handle(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
   void paintTo(HDC target, const RECT& rc);
+  bool updateProbe(int client_x, int client_y);
+  int samplePlane(int plane, int x, int y) const;
 
   HWND hwnd_ = nullptr;
-  std::vector<uint8_t> image_;
-  int image_w_ = 0;
-  int image_h_ = 0;
+  ImageData image_;
+  RECT image_rect_ = {};
+  Probe probe_;
+  bool tracking_ = false;
   std::wstring note_;
   std::wstring message_;
 };
