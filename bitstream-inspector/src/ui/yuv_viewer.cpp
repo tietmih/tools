@@ -308,7 +308,8 @@ LRESULT CALLBACK yuvProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
                      std::to_wstring(state->default_height).c_str());
       for (HWND control :
            {state->width, state->height, state->format, state->matrix,
-            state->range, state->open, state->prev, state->next, state->status})
+            state->range, state->open, state->open_b, state->mode, state->prev,
+            state->next, state->status})
         SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont()),
                      TRUE);
       state->updateStatus();
