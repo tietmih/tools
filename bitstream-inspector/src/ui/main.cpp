@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
 #include <deque>
 #include <iterator>
 #include <memory>
@@ -13,6 +14,8 @@
 #include <vector>
 
 #include "core/conformance.h"
+#include "core/quality.h"
+#include "core/reference_yuv.h"
 #include "core/stream.h"
 #include "ui/chart_view.h"
 #include "ui/compare_window.h"
@@ -58,6 +61,8 @@ enum : int {
   IDM_FILE_EXPORT_IMAGE = 2006,
   IDM_FILE_EXPORT_YUV = 2007,
   IDM_FILE_COMPARE = 2010,
+  IDM_FILE_REFERENCE = 2011,
+  IDM_FILE_EXPORT_QUALITY = 2012,
   IDM_VIEW_PREV = 2101,
   IDM_VIEW_NEXT = 2102,
   IDM_VIEW_RELOAD = 2103,
@@ -66,8 +71,10 @@ enum : int {
   IDM_VIEW_CHART_SIZE = 2106,
   IDM_VIEW_CHART_CPB = 2107,
   IDM_VIEW_CHART_BITS = 2117,
+  IDM_VIEW_CHART_QUALITY = 2121,
   IDM_VIEW_OVERLAY = 2118,
   IDM_VIEW_CONFORMANCE = 2119,
+  IDM_VIEW_DIFF = 2120,
   IDM_VIEW_MATRIX_AUTO = 2108,
   IDM_VIEW_MATRIX_601 = 2109,
   IDM_VIEW_MATRIX_709 = 2110,
@@ -157,6 +164,14 @@ struct App {
   int preview_matrix = -1;  // -1 = VUI/auto
   int preview_range = -1;   // -1 = VUI, 0 = limited, 1 = full
   bool show_overlay = false;
+  std::atomic<bool> show_diff{false};
+  std::wstring reference_path;
+  int reference_frame = -1;
+  std::vector<bs::QualitySample> quality;
+  bool quality_ready = false;
+  HANDLE quality_thread = nullptr;
+  HANDLE quality_stop = nullptr;
+  std::atomic<int> quality_generation{0};
   int drag = 0;
   int drag_offset = 0;
   RECT split_left = {};
@@ -169,6 +184,8 @@ App g_app;
 
 constexpr UINT WM_APP_VIDEO_READY = WM_APP + 20;
 constexpr UINT WM_APP_THUMB_READY = WM_APP + 22;
+constexpr UINT WM_APP_QUALITY_READY = WM_APP + 24;
+constexpr UINT WM_APP_QUALITY_PROGRESS = WM_APP + 25;
 
 struct VideoResult {
   ImageData image;
@@ -177,6 +194,15 @@ struct VideoResult {
   bool keyframe_only = false;
   bool ok = false;
   std::string error;
+};
+
+struct QualityResult {
+  int generation = -1;
+  bool ok = false;
+  std::string error;
+  std::vector<bs::QualitySample> samples;
+  double avg_psnr = 0.0;
+  double avg_ssim = 0.0;
 };
 
 struct ThumbResult {
@@ -357,6 +383,214 @@ void showConformance() {
               MB_OK | (issues.empty() ? MB_ICONINFORMATION : MB_ICONWARNING));
 }
 
+DWORD WINAPI qualityWorkerProc(LPVOID param) {
+  const int generation = static_cast<int>(reinterpret_cast<INT_PTR>(param));
+  auto* result = new QualityResult();
+  result->generation = generation;
+#ifdef BS_HAVE_FFMPEG
+  bs::YuvLayout layout = bs::YuvLayout::None;
+  int width = 0;
+  int height = 0;
+  std::string error;
+  const Stream& stream = g_app.stream;
+  int chroma = 1;
+  int depth = 8;
+  if (stream.codec() == Codec::H264) {
+    chroma = stream.h264Sps().chroma_format_idc;
+    depth = 8 + stream.h264Sps().bit_depth_luma_minus8;
+    width = stream.h264Sps().width();
+    height = stream.h264Sps().height();
+  } else if (stream.codec() == Codec::H265) {
+    chroma = stream.h265Sps().chroma_format_idc;
+    depth = 8 + stream.h265Sps().bit_depth_luma_minus8;
+    width = stream.h265Sps().display_width();
+    height = stream.h265Sps().display_height();
+  } else {
+    error = "unsupported codec";
+  }
+  if (error.empty()) {
+    if (chroma == 1 && depth == 8)
+      layout = bs::YuvLayout::I420;
+    else if (chroma == 2 && depth == 8)
+      layout = bs::YuvLayout::I422;
+    else if (chroma == 3 && depth == 8)
+      layout = bs::YuvLayout::I444;
+    else if (chroma == 1 && depth == 10)
+      layout = bs::YuvLayout::P010;
+    else if (chroma == 2 && depth == 10)
+      layout = bs::YuvLayout::P210;
+    else if (chroma == 1 && depth == 12)
+      layout = bs::YuvLayout::P012;
+    else if (chroma == 2 && depth == 12)
+      layout = bs::YuvLayout::P212;
+    else
+      error = "unsupported reference layout";
+  }
+  bs::ReferenceYuv reference;
+  if (error.empty() && !reference.open(utf8(g_app.reference_path), layout,
+                                       width, height, error)) {
+  }
+  std::unique_ptr<MediaFile> media;
+  std::vector<uint8_t> es;
+  if (error.empty()) {
+    media = std::make_unique<MediaFile>();
+    if (!media->open(utf8(g_app.path), error) ||
+        !media->extractAnnexB(es, error)) {
+      media.reset();
+    }
+  }
+  if (error.empty() && media) {
+    result->samples.resize(stream.frames().size());
+    std::vector<uint8_t> storage;
+    double psnr_sum = 0.0;
+    double ssim_sum = 0.0;
+    int measured = 0;
+    for (size_t i = 0; i < stream.frames().size(); i++) {
+      if (WaitForSingleObject(g_app.quality_stop, 0) == WAIT_OBJECT_0) break;
+      bs::QualitySample& sample = result->samples[i];
+      const FrameInfo& frame = stream.frames()[i];
+      if (frame.display_index < 0 ||
+          frame.display_index >= reference.frameCount())
+        continue;
+      DecodedFrame decoded;
+      bool keyframe_only = false;
+      if (!media->decodeFrameAt(stream, static_cast<int>(i), decoded,
+                                keyframe_only, error))
+        continue;
+      if (decoded.bit_depth != depth || decoded.chroma_format != chroma ||
+          decoded.width != width || decoded.height != height)
+        continue;
+      bs::YuvFrameView view;
+      if (!reference.readFrame(frame.display_index, storage, view, error))
+        continue;
+      YuvFrameView test;
+      test.bit_depth = decoded.bit_depth;
+      test.chroma_format = decoded.chroma_format;
+      const size_t bytes = decoded.bit_depth > 8 ? 2 : 1;
+      for (int p = 0; p < 3; p++) {
+        const int pw =
+            p == 0 ? decoded.width
+                   : (chroma == 3 ? decoded.width : (decoded.width + 1) / 2);
+        const int ph =
+            p == 0 ? decoded.height
+                   : (chroma == 1 ? (decoded.height + 1) / 2 : decoded.height);
+        test.planes[p] = {decoded.planes[static_cast<size_t>(p)].data(),
+                          pw * static_cast<int>(bytes), pw, ph};
+      }
+      bs::QualityMetrics metrics;
+      std::string quality_error;
+      if (!bs::computeQuality(test, view, metrics, quality_error)) continue;
+      sample.valid = true;
+      sample.psnr_y = metrics.psnr_y;
+      sample.psnr_avg = metrics.psnr_avg;
+      sample.ssim = metrics.ssim;
+      psnr_sum += metrics.psnr_avg;
+      ssim_sum += metrics.ssim;
+      measured++;
+    }
+    result->ok = measured > 0;
+    if (measured > 0) {
+      result->avg_psnr = psnr_sum / measured;
+      result->avg_ssim = ssim_sum / measured;
+    } else {
+      result->error = "no frames matched the reference";
+    }
+  }
+  if (!result->ok && result->error.empty()) result->error = error;
+#endif
+  PostMessageW(g_app.hwnd, WM_APP_QUALITY_READY, 0,
+               reinterpret_cast<LPARAM>(result));
+  return 0;
+}
+
+void startQualityWorker() {
+  if (g_app.quality_thread || !g_app.quality_stop) return;
+  ResetEvent(g_app.quality_stop);
+  const int generation = g_app.quality_generation.fetch_add(1) + 1;
+  g_app.quality_thread = CreateThread(
+      nullptr, 0, qualityWorkerProc,
+      reinterpret_cast<LPVOID>(static_cast<INT_PTR>(generation)), 0, nullptr);
+}
+
+void stopQualityWorker() {
+  if (g_app.quality_thread) {
+    SetEvent(g_app.quality_stop);
+    WaitForSingleObject(g_app.quality_thread, INFINITE);
+    CloseHandle(g_app.quality_thread);
+    g_app.quality_thread = nullptr;
+  }
+  g_app.quality_generation.fetch_add(1);
+  if (g_app.quality_stop) ResetEvent(g_app.quality_stop);
+}
+
+void computeQualityAsync() {
+#ifdef BS_HAVE_FFMPEG
+  if (!g_app.media || g_app.reference_path.empty() || !g_app.loaded) {
+    g_app.quality.clear();
+    g_app.quality_ready = false;
+    g_app.chart.setQuality(nullptr);
+    return;
+  }
+  stopQualityWorker();
+  g_app.quality.clear();
+  g_app.quality_ready = false;
+  startQualityWorker();
+#endif
+}
+
+#ifdef BS_HAVE_FFMPEG
+void renderVideoFrame(int frame, ImageData& image, bool& keyframe_only,
+                      std::string& error) {
+  DecodedFrame decoded;
+  if (!g_app.media->decodeFrameAt(g_app.stream, frame, decoded, keyframe_only,
+                                  error))
+    return;
+  image.bgra = std::move(decoded.bgra);
+  image.width = decoded.width;
+  image.height = decoded.height;
+  image.bit_depth = decoded.bit_depth;
+  image.chroma_format = decoded.chroma_format;
+  image.matrix = decoded.matrix;
+  image.full_range = decoded.full_range;
+  image.layout = decoded.layout;
+  image.planes = std::move(decoded.planes);
+  image.strides = std::move(decoded.strides);
+  if (!g_app.show_diff || g_app.reference_path.empty()) return;
+  const size_t index = static_cast<size_t>(frame);
+  if (index >= g_app.stream.frames().size()) return;
+  const FrameInfo& info = g_app.stream.frames()[index];
+  if (info.display_index < 0) return;
+  bs::YuvLayout layout = image.layout;
+  int chroma = image.chroma_format;
+  int depth = image.bit_depth;
+  bs::ReferenceYuv reference;
+  if (!reference.open(utf8(g_app.reference_path), layout, image.width,
+                      image.height, error))
+    return;
+  std::vector<uint8_t> storage;
+  bs::YuvFrameView view;
+  if (!reference.readFrame(info.display_index, storage, view, error)) return;
+  if (view.bit_depth != depth || view.chroma_format != chroma) return;
+  YuvFrameView test;
+  test.bit_depth = depth;
+  test.chroma_format = chroma;
+  const size_t bytes = depth > 8 ? 2 : 1;
+  for (int p = 0; p < 3; p++) {
+    const int pw = p == 0 ? image.width
+                          : (chroma == 3 ? image.width : (image.width + 1) / 2);
+    const int ph = p == 0
+                       ? image.height
+                       : (chroma == 1 ? (image.height + 1) / 2 : image.height);
+    test.planes[p] = {image.planes[static_cast<size_t>(p)].data(),
+                      pw * static_cast<int>(bytes), pw, ph};
+  }
+  bs::makeDiffImage(test, view, image.bgra);
+  image.planes.clear();
+  image.strides.clear();
+}
+
+#endif
+
 void applyPreviewColour() {
 #ifdef BS_HAVE_FFMPEG
   if (!g_app.media) return;
@@ -390,6 +624,9 @@ void createMenu(HWND hwnd) {
               tr(L"Export &NAL List (CSV)...", L"导出 NAL 列表 CSV(&N)..."));
   AppendMenuW(file, MF_STRING, IDM_FILE_EXPORT_CPB,
               tr(L"Export &CPB Model (CSV)...", L"导出 CPB 模型 CSV(&C)..."));
+  AppendMenuW(
+      file, MF_STRING, IDM_FILE_EXPORT_QUALITY,
+      tr(L"Export &Quality Metrics (CSV)...", L"导出质量指标 CSV(&M)..."));
   AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(
       file, MF_STRING, IDM_FILE_EXPORT_IMAGE,
@@ -399,6 +636,8 @@ void createMenu(HWND hwnd) {
   AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(file, MF_STRING, IDM_FILE_COMPARE,
               tr(L"&Compare Streams...", L"码流对比(&C)..."));
+  AppendMenuW(file, MF_STRING, IDM_FILE_REFERENCE,
+              tr(L"Load Reference &YUV...", L"加载参考 YUV(&Y)..."));
   AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(file, MF_STRING, IDM_FILE_EXIT, tr(L"E&xit", L"退出(&X)"));
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file),
@@ -427,9 +666,13 @@ void createMenu(HWND hwnd) {
               tr(L"Chart: &CPB Occupancy", L"图表：CPB 占用(&C)"));
   AppendMenuW(view, MF_STRING, IDM_VIEW_CHART_BITS,
               tr(L"Chart: &Bit Allocation", L"图表：比特分配(&B)"));
+  AppendMenuW(view, MF_STRING, IDM_VIEW_CHART_QUALITY,
+              tr(L"Chart: &Quality Metrics", L"图表：质量指标(&Q)"));
   AppendMenuW(view, MF_STRING | (g_app.show_overlay ? MF_CHECKED : 0),
               IDM_VIEW_OVERLAY,
               tr(L"Slice/&Tile Overlay", L"Slice/Tile 叠加(&T)"));
+  AppendMenuW(view, MF_STRING | (g_app.show_diff ? MF_CHECKED : 0),
+              IDM_VIEW_DIFF, tr(L"&Difference View", L"差异视图(&D)"));
   AppendMenuW(view, MF_STRING, IDM_VIEW_CONFORMANCE,
               tr(L"&Conformance Report...", L"合规检查(&C)..."));
   CheckMenuRadioItem(view, IDM_VIEW_CHART_SIZE, IDM_VIEW_CHART_CPB,
@@ -810,16 +1053,9 @@ DWORD WINAPI videoWorkerProc(LPVOID) {
       result->ok = g_app.media->decodeFrameAt(
           g_app.stream, frame, decoded, result->keyframe_only, result->error);
       if (result->ok) {
-        result->image.bgra = std::move(decoded.bgra);
-        result->image.width = decoded.width;
-        result->image.height = decoded.height;
-        result->image.bit_depth = decoded.bit_depth;
-        result->image.chroma_format = decoded.chroma_format;
-        result->image.matrix = decoded.matrix;
-        result->image.full_range = decoded.full_range;
-        result->image.layout = decoded.layout;
-        result->image.planes = std::move(decoded.planes);
-        result->image.strides = std::move(decoded.strides);
+        renderVideoFrame(frame, result->image, result->keyframe_only,
+                         result->error);
+        if (result->image.bgra.empty()) result->ok = false;
       }
     } else {
       result->error = "no media";
@@ -1131,6 +1367,11 @@ void openFile(const std::wstring& path) {
   }
   stopVideoWorker();
   stopThumbWorker();
+  stopQualityWorker();
+  g_app.quality.clear();
+  g_app.quality_ready = false;
+  g_app.chart.setQuality(nullptr);
+  g_app.reference_path.clear();
   g_app.stream = std::move(loaded);
   g_app.loaded = true;
   g_app.path = path;
@@ -1171,6 +1412,33 @@ void openFile(const std::wstring& path) {
   startThumbWorker();
   selectFrame(0);
   updateStatus();
+}
+
+void loadReferenceDialog(HWND hwnd) {
+  if (!g_app.loaded) {
+    MessageBoxW(hwnd, tr(L"Open a stream first.", L"请先打开码流。"), kTitle,
+                MB_OK | MB_ICONINFORMATION);
+    return;
+  }
+  wchar_t file[32768] = {};
+  OPENFILENAMEW ofn = {};
+  ofn.lStructSize = sizeof(ofn);
+  ofn.hwndOwner = hwnd;
+  ofn.lpstrFilter = tr(L"Raw YUV (*.yuv)\0*.yuv\0All files (*.*)\0*.*\0",
+                       L"原始 YUV (*.yuv)\0*.yuv\0所有文件 (*.*)\0*.*\0");
+  ofn.lpstrFile = file;
+  ofn.nMaxFile = 32768;
+  ofn.lpstrTitle = tr(L"Load reference YUV", L"加载参考 YUV");
+  ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER;
+  if (!GetOpenFileNameW(&ofn)) return;
+  stopQualityWorker();
+  stopVideoWorker();
+  g_app.reference_path = file;
+  computeQualityAsync();
+  g_app.chart.setMode(ChartView::ChartMode::Quality);
+  g_app.video_frame = -1;
+  startVideoWorker();
+  if (g_app.current_frame >= 0) requestVideo(g_app.current_frame);
 }
 
 void openCompare(HWND hwnd) {
@@ -1289,7 +1557,7 @@ void exportYuv() {
               tr(L"Export complete", L"导出完成"), MB_OK | MB_ICONINFORMATION);
 }
 
-enum class ExportKind { Frames, Nals, Cpb };
+enum class ExportKind { Frames, Nals, Cpb, Quality };
 
 void exportCsv(ExportKind kind) {
   if (!g_app.loaded) {
@@ -1300,9 +1568,11 @@ void exportCsv(ExportKind kind) {
   }
   const bool frames = kind == ExportKind::Frames;
   const bool cpb = kind == ExportKind::Cpb;
-  const wchar_t* suffix = frames ? L"_frames.csv"
-                          : cpb  ? L"_cpb.csv"
-                                 : L"_nals.csv";
+  const bool quality = kind == ExportKind::Quality;
+  const wchar_t* suffix = frames    ? L"_frames.csv"
+                          : cpb     ? L"_cpb.csv"
+                          : quality ? L"_quality.csv"
+                                    : L"_nals.csv";
   std::wstring default_name = defaultExportName(suffix);
   wchar_t file[32768] = {};
   lstrcpynW(file, default_name.c_str(), 32768);
@@ -1315,29 +1585,50 @@ void exportCsv(ExportKind kind) {
   ofn.lpstrFile = file;
   ofn.nMaxFile = 32768;
   ofn.lpstrDefExt = L"csv";
-  ofn.lpstrTitle = frames ? tr(L"Export frame list", L"导出帧列表")
-                   : cpb  ? tr(L"Export CPB model", L"导出 CPB 模型")
-                          : tr(L"Export NAL list", L"导出 NAL 列表");
+  ofn.lpstrTitle = frames    ? tr(L"Export frame list", L"导出帧列表")
+                   : cpb     ? tr(L"Export CPB model", L"导出 CPB 模型")
+                   : quality ? tr(L"Export quality metrics", L"导出质量指标")
+                             : tr(L"Export NAL list", L"导出 NAL 列表");
   ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_EXPLORER;
   if (!GetSaveFileNameW(&ofn)) return;
 
   std::string data("\xEF\xBB\xBF", 3);
-  data += frames ? g_app.stream.framesCsv()
-          : cpb  ? g_app.stream.cpbCsv()
-                 : g_app.stream.nalsCsv();
+  if (quality) {
+    if (g_app.quality.empty()) {
+      MessageBoxW(g_app.hwnd,
+                  tr(L"Load a reference YUV first.", L"请先加载参考 YUV。"),
+                  kTitle, MB_OK | MB_ICONINFORMATION);
+      return;
+    }
+    data += "index,valid,psnr_y,psnr_avg,ssim\r\n";
+    for (size_t i = 0; i < g_app.quality.size(); i++) {
+      const auto& sample = g_app.quality[i];
+      char row[128];
+      std::snprintf(row, sizeof(row), "%zu,%d,%.4f,%.4f,%.6f\r\n", i,
+                    sample.valid ? 1 : 0, sample.psnr_y, sample.psnr_avg,
+                    sample.ssim);
+      data += row;
+    }
+  } else {
+    data += frames ? g_app.stream.framesCsv()
+            : cpb  ? g_app.stream.cpbCsv()
+                   : g_app.stream.nalsCsv();
+  }
   if (!writeFileW(file, data)) {
     MessageBoxW(g_app.hwnd,
                 tr(L"Cannot write the CSV file.", L"无法写入 CSV 文件。"),
                 tr(L"Export failed", L"导出失败"), MB_OK | MB_ICONERROR);
     return;
   }
-  size_t count = frames ? g_app.stream.frames().size()
-                 : cpb  ? g_app.stream.cpbModel().samples.size()
-                        : g_app.stream.nals().size();
+  size_t count = frames    ? g_app.stream.frames().size()
+                 : cpb     ? g_app.stream.cpbModel().samples.size()
+                 : quality ? g_app.quality.size()
+                           : g_app.stream.nals().size();
   std::wstring message = tr(L"Exported ", L"已导出 ") + std::to_wstring(count) +
-                         (frames ? tr(L" frame rows.", L" 行帧记录。")
-                          : cpb  ? tr(L" CPB rows.", L" 行 CPB 记录。")
-                                 : tr(L" NAL rows.", L" 行 NAL 记录。"));
+                         (frames    ? tr(L" frame rows.", L" 行帧记录。")
+                          : cpb     ? tr(L" CPB rows.", L" 行 CPB 记录。")
+                          : quality ? tr(L" quality rows.", L" 行质量记录。")
+                                    : tr(L" NAL rows.", L" 行 NAL 记录。"));
   MessageBoxW(g_app.hwnd, message.c_str(), tr(L"Export complete", L"导出完成"),
               MB_OK | MB_ICONINFORMATION);
 }
@@ -1354,6 +1645,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
       g_app.thumb_lock_ready = true;
       g_app.thumb_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
       g_app.thumb_stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+      g_app.quality_stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
       loadSettings();
       DragAcceptFiles(hwnd, TRUE);
       createMenu(hwnd);
@@ -1474,6 +1766,9 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         case IDM_FILE_EXPORT_CPB:
           exportCsv(ExportKind::Cpb);
           return 0;
+        case IDM_FILE_EXPORT_QUALITY:
+          exportCsv(ExportKind::Quality);
+          return 0;
         case IDM_FILE_EXPORT_IMAGE:
           exportImage();
           return 0;
@@ -1482,6 +1777,29 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
           return 0;
         case IDM_FILE_COMPARE:
           openCompare(hwnd);
+          return 0;
+        case IDM_FILE_REFERENCE:
+          loadReferenceDialog(hwnd);
+          return 0;
+        case IDM_VIEW_DIFF:
+          if (g_app.reference_path.empty()) {
+            MessageBoxW(
+                g_app.hwnd,
+                tr(L"Load a reference YUV first.", L"请先加载参考 YUV。"),
+                kTitle, MB_OK | MB_ICONINFORMATION);
+            return 0;
+          }
+          g_app.show_diff = !g_app.show_diff;
+          CheckMenuItem(
+              GetMenu(hwnd), IDM_VIEW_DIFF,
+              MF_BYCOMMAND | (g_app.show_diff ? MF_CHECKED : MF_UNCHECKED));
+          if (g_app.current_frame >= 0) {
+            g_app.video_frame = -1;
+            requestVideo(g_app.current_frame);
+          }
+          return 0;
+        case IDM_VIEW_CHART_QUALITY:
+          g_app.chart.setMode(ChartView::ChartMode::Quality);
           return 0;
         case IDM_VIEW_MATRIX_AUTO:
           g_app.preview_matrix = -1;
@@ -1651,6 +1969,24 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
       selectFrame(static_cast<int>(wparam));
       return 0;
 
+    case WM_APP_QUALITY_READY: {
+      auto* result = reinterpret_cast<QualityResult*>(lparam);
+      if (result) {
+        if (result->generation == g_app.quality_generation.load() &&
+            result->ok) {
+          g_app.quality = std::move(result->samples);
+          g_app.quality_ready = true;
+          g_app.chart.setQuality(&g_app.quality);
+          g_app.chart.setMode(ChartView::ChartMode::Quality);
+        } else if (!result->ok && !result->error.empty()) {
+          g_app.quality_ready = false;
+          SetWindowTextW(g_app.status, wide(result->error).c_str());
+        }
+        delete result;
+      }
+      return 0;
+    }
+
     case WM_PAINT: {
       PAINTSTRUCT ps;
       HDC dc = BeginPaint(hwnd, &ps);
@@ -1774,6 +2110,11 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     case WM_DESTROY:
       stopVideoWorker();
       stopThumbWorker();
+      stopQualityWorker();
+      if (g_app.quality_stop) {
+        CloseHandle(g_app.quality_stop);
+        g_app.quality_stop = nullptr;
+      }
       if (g_app.thumb_event) {
         CloseHandle(g_app.thumb_event);
         g_app.thumb_event = nullptr;

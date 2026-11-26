@@ -16,6 +16,7 @@ add_library(bs_core STATIC
     src/core/cpb.cpp
     src/core/conformance.cpp
     src/core/quality.cpp
+    src/core/reference_yuv.cpp
     src/core/ts.cpp
     src/core/stream.cpp
 )

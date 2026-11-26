@@ -14,6 +14,7 @@
 #include "core/h264.h"
 #include "core/h265.h"
 #include "core/nal.h"
+#include "core/quality.h"
 #include "core/sei.h"
 #include "core/stream.h"
 
@@ -690,6 +691,26 @@ void testSeiHrdPayloads() {
   CHECK_EQ(pt_info.pic_timing.dpb_output_delay, 4u);
 }
 
+void testDiffImage() {
+  const uint8_t a[4] = {10, 20, 30, 40};
+  const uint8_t b[4] = {10, 18, 30, 0};
+  bs::YuvPlaneView pa = {a, 4, 4, 1};
+  bs::YuvPlaneView pb = {b, 4, 4, 1};
+  bs::YuvFrameView va;
+  bs::YuvFrameView vb;
+  va.bit_depth = vb.bit_depth = 8;
+  va.chroma_format = vb.chroma_format = 1;
+  va.planes[0] = pa;
+  vb.planes[0] = pb;
+  std::vector<uint8_t> bgra;
+  bs::makeDiffImage(va, vb, bgra);
+  CHECK_EQ(bgra.size(), 16u);
+  CHECK_EQ(bgra[3], 255);
+  CHECK_EQ(bgra[0], 0);        // identical samples map to black
+  CHECK(bgra[4 * 1 + 1] > 0);  // sample 1 differs
+  CHECK_EQ(bgra[4 * 1 + 3], 255);
+}
+
 void testConformance() {
   bs::H264Sps h264;
   h264.level_idc = 10;
@@ -798,6 +819,7 @@ int main() {
   testHrdCpb();
   testSeiHrdPayloads();
   testConformance();
+  testDiffImage();
   testStreamDetails();
   testMalformedInput();
 

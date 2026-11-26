@@ -56,8 +56,14 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
   and missing references; double-clicking a reference jumps to that frame.
 - **Conformance**: a View menu report checks picture size, MB/CTB rate, DPB
   and average bitrate against the signalled H.264/H.265 level.
-- **Compare**: File > Compare Streams opens two files side by side and keeps
-  display-order navigation in sync.
+- **Quality**: File > Load Reference YUV computes per-frame PSNR/SSIM for the
+  open stream; the quality chart and a reference difference view show the
+  result, and the metrics export as CSV. The reference must be planar
+  I420/I422/I444/P010/P210/P012/P212 in display order, matching the decoded
+  frame size.
+- **Compare**: File > Compare Streams opens two files side by side, with
+  display-order/POC/time synchronization and an optional difference view with
+  per-pair PSNR/SSIM.
 - **Overlays**: an optional slice/CTB boundary overlay on the video tab; H.265
   tile boundaries come from the PPS layout.
 - **Thumbnails**: lazy, cached thumbnail strip with GOP boundaries; prev/next
@@ -257,7 +263,8 @@ below are automated in `tests/` and run by CI on every push:
 | MPEG-TS scan | 188/192/204-byte packets, PID/stream type, PCR samples and injected CC errors detected |
 | PSNR/SSIM | per-frame values and summaries match ffmpeg psnr/ssim within rounding |
 | Conformance checks | out-of-level synthetic SPS flagged; valid H.265 vector clean |
-| Side-by-side compare | basic two-stream window; POC/time binding and difference view are not implemented |
+| Quality GUI | reference YUV loading, quality chart/difference view and CSV export compile in the Windows GUI |
+| Side-by-side compare | display-order/POC/time sync and difference view with PSNR/SSIM |
 | Thumbnail strip and GOP navigation | window creation checked by the Windows smoke test; thumbnail loading is manual |
 | Windows installer: default, custom `/D=`, `/LANG=2052`, upgrade from 0.3.0, silent uninstall | files, shortcuts, HKCU entry, version hand-off and clean removal verified |
 | Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |
@@ -271,10 +278,7 @@ containers.
   GOP start to show the exact selected picture, including B pictures. Field
   pictures are shown as separate pictures.
 - No DPB/GOP graph or macroblock-level entropy decoding yet.
-- PSNR/SSIM are available from `mtest`; the GUI quality chart/difference view is
-  not implemented yet.
-- Side-by-side compare is basic display-order navigation; POC/time binding and
-  the difference view are not implemented.
+- GUI YUV range export is current-frame only; use `mtest --range` for ranges.
 - The CPB model covers CPB0 from SPS VUI HRD; sub-picture, multiple CPBs and
   concatenation are not modelled. Missing delays are marked as estimated, and
   streams without HRD get a labelled average-bitrate estimate.

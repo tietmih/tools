@@ -81,6 +81,31 @@ double ssimPlane(const YuvPlaneView& a, const YuvPlaneView& b, int bit_depth,
 
 }  // namespace
 
+void makeDiffImage(const YuvFrameView& test, const YuvFrameView& reference,
+                   std::vector<uint8_t>& bgra) {
+  if (!test.planes[0].data || !reference.planes[0].data) return;
+  const int width = test.planes[0].width;
+  const int height = test.planes[0].height;
+  if (width != reference.planes[0].width ||
+      height != reference.planes[0].height)
+    return;
+  bgra.resize(static_cast<size_t>(width) * height * 4);
+  const double scale = test.bit_depth > 8 ? 2.0 : 8.0;
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      const double a = sample(test.planes[0], x, y, test.bit_depth);
+      const double b = sample(reference.planes[0], x, y, test.bit_depth);
+      const double diff = std::fabs(a - b) * scale;
+      const int value = std::min(255, static_cast<int>(diff));
+      const size_t at = (static_cast<size_t>(y) * width + x) * 4;
+      bgra[at + 0] = static_cast<uint8_t>(value / 4);
+      bgra[at + 1] = static_cast<uint8_t>(value / 2);
+      bgra[at + 2] = static_cast<uint8_t>(value);
+      bgra[at + 3] = 255;
+    }
+  }
+}
+
 bool computeQuality(const YuvFrameView& test, const YuvFrameView& reference,
                     QualityMetrics& out, std::string& error) {
   if (test.bit_depth != reference.bit_depth ||

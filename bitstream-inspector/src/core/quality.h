@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace bs {
 
@@ -20,6 +21,13 @@ struct YuvFrameView {
   bool full_range = false;
 };
 
+struct QualitySample {
+  bool valid = false;
+  double psnr_y = 0.0;
+  double psnr_avg = 0.0;
+  double ssim = 0.0;
+};
+
 struct QualityMetrics {
   double psnr_y = 0.0;
   double psnr_u = 0.0;
@@ -35,5 +43,10 @@ struct QualityMetrics {
 
 bool computeQuality(const YuvFrameView& test, const YuvFrameView& reference,
                     QualityMetrics& out, std::string& error);
+
+// Builds an amplified luma-difference heat map (BGRA). Dimensions and chroma
+// must match between the two views.
+void makeDiffImage(const YuvFrameView& test, const YuvFrameView& reference,
+                   std::vector<uint8_t>& bgra);
 
 }  // namespace bs

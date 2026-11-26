@@ -64,6 +64,11 @@ void ChartView::setSelected(int frame_index) {
   if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
+void ChartView::setQuality(const std::vector<bs::QualitySample>* samples) {
+  quality_ = samples;
+  if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
 void ChartView::setMode(ChartMode mode) {
   mode_ = mode;
   if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
@@ -131,6 +136,11 @@ void ChartView::paintTo(HDC target, const RECT& rc) {
   }
   if (mode_ == ChartMode::Cpb) {
     paintCpb(dc, rc);
+    finish();
+    return;
+  }
+  if (mode_ == ChartMode::Quality) {
+    paintQuality(dc, rc);
     finish();
     return;
   }
@@ -307,6 +317,98 @@ void ChartView::paintBits(HDC dc, const RECT& rc) {
            static_cast<double>(end - start) / fps, rate);
   TextOutW(dc, plot.left, plot.bottom + px(4), footer,
            static_cast<int>(wcslen(footer)));
+}
+
+void ChartView::paintQuality(HDC dc, const RECT& rc) {
+  SelectObject(dc, uiFont());
+  SetBkMode(dc, TRANSPARENT);
+  Plot plot = {px(10), rc.right - px(10), px(34), rc.bottom - px(22)};
+  int width = plot.right - plot.left;
+  int height = plot.bottom - plot.top;
+  if (width <= 4 || height <= 4) return;
+  if (!quality_) {
+    SetTextColor(dc, RGB(130, 130, 130));
+    RECT text_rc = rc;
+    DrawTextW(dc, tr(L"No reference YUV loaded", L"未加载参考 YUV"), -1,
+              &text_rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    return;
+  }
+  const auto& samples = *quality_;
+  if (samples.empty()) return;
+  const double kFloor = 20.0;
+  const double kCeiling = 60.0;
+  HPEN grid_pen = CreatePen(PS_SOLID, 1, RGB(228, 228, 228));
+  HGDIOBJ old_pen = SelectObject(dc, grid_pen);
+  for (double level = kFloor; level <= kCeiling; level += 10.0) {
+    const int y = plot.bottom - static_cast<int>((level - kFloor) /
+                                                 (kCeiling - kFloor) * height);
+    MoveToEx(dc, plot.left, y, nullptr);
+    LineTo(dc, plot.right, y);
+    wchar_t label[16];
+    swprintf(label, 16, L"%.0f", level);
+    SetTextColor(dc, RGB(140, 140, 140));
+    TextOutW(dc, plot.left, y - px(7), label, static_cast<int>(wcslen(label)));
+  }
+  SelectObject(dc, old_pen);
+  DeleteObject(grid_pen);
+
+  const size_t count = samples.size();
+  HBRUSH bar_brush = CreateSolidBrush(RGB(52, 108, 200));
+  HBRUSH ssim_brush = CreateSolidBrush(RGB(90, 170, 110));
+  HPEN ssim_pen = CreatePen(PS_SOLID, 1, RGB(46, 148, 88));
+  HGDIOBJ old = SelectObject(dc, ssim_pen);
+  bool started = false;
+  for (int x = plot.left; x < plot.right; x++) {
+    size_t first =
+        static_cast<size_t>(x - plot.left) * count / static_cast<size_t>(width);
+    size_t last = static_cast<size_t>(x - plot.left + 1) * count /
+                  static_cast<size_t>(width);
+    if (last <= first) last = first + 1;
+    if (last > count) last = count;
+    if (!samples[first].valid) continue;
+    const double psnr = samples[first].psnr_avg;
+    const double clamped = std::max(kFloor, std::min(kCeiling, psnr));
+    const int top =
+        plot.bottom -
+        static_cast<int>((clamped - kFloor) / (kCeiling - kFloor) * height);
+    RECT bar = {x, top, x + 1, plot.bottom};
+    FillRect(dc, &bar, bar_brush);
+    const int ssim_y =
+        plot.bottom -
+        static_cast<int>(std::max(0.0, std::min(1.0, samples[first].ssim)) *
+                         height);
+    if (!started) {
+      MoveToEx(dc, x, ssim_y, nullptr);
+      started = true;
+    } else {
+      LineTo(dc, x, ssim_y);
+    }
+  }
+  SelectObject(dc, old);
+  DeleteObject(ssim_pen);
+  DeleteObject(bar_brush);
+  DeleteObject(ssim_brush);
+
+  if (selected_ >= 0 && selected_ < static_cast<int>(count)) {
+    int x = plot.left + static_cast<int>(static_cast<double>(selected_) *
+                                         width / static_cast<double>(count));
+    HPEN marker = CreatePen(PS_SOLID, 2, RGB(30, 30, 30));
+    HGDIOBJ previous = SelectObject(dc, marker);
+    MoveToEx(dc, x, plot.top, nullptr);
+    LineTo(dc, x, plot.bottom);
+    SelectObject(dc, previous);
+    DeleteObject(marker);
+  }
+
+  SetTextColor(dc, RGB(100, 100, 100));
+  std::wstring title = tr(L"PSNR (dB) / SSIM", L"PSNR (dB) / SSIM");
+  TextOutW(dc, plot.left, px(2), title.c_str(), static_cast<int>(title.size()));
+  std::wstring right =
+      tr(L"blue: PSNR avg   green: SSIM", L"蓝：PSNR 平均  绿：SSIM");
+  SIZE sz = {};
+  GetTextExtentPoint32W(dc, right.c_str(), static_cast<int>(right.size()), &sz);
+  TextOutW(dc, plot.right - sz.cx, px(2), right.c_str(),
+           static_cast<int>(right.size()));
 }
 
 void ChartView::paintCpb(HDC dc, const RECT& rc) {
