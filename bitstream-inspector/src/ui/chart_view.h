@@ -11,7 +11,7 @@ using bs::Stream;
 // Frame-size bar chart with a picture-type strip. Clicking selects a frame.
 class ChartView {
  public:
-  enum class ChartMode { FrameSize, Cpb };
+  enum class ChartMode { FrameSize, Bits, Cpb };
 
   void create(HWND parent, HINSTANCE inst, int id);
   HWND hwnd() const { return hwnd_; }
@@ -26,6 +26,7 @@ class ChartView {
                                   LPARAM lparam);
   LRESULT handle(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
   void paintTo(HDC target, const RECT& rc);
+  void paintBits(HDC dc, const RECT& rc);
   void paintCpb(HDC dc, const RECT& rc);
   void onClick(HWND hwnd, int x, int y);
 

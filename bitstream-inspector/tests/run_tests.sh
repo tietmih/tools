@@ -44,6 +44,8 @@ python3 "$ROOT/tests/check_hrd.py" --ffmpeg "$REF_FFMPEG" \
     --bsinfo "$BUILD/bsinfo" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_cli.py" --bsinfo "$BUILD/bsinfo" \
     --vectors "$VECTORS"
+python3 "$ROOT/tests/check_bits.py" --bsinfo "$BUILD/bsinfo" \
+    --vectors "$VECTORS"
 python3 "$ROOT/tests/check_refs.py" --bsinfo "$BUILD/bsinfo" \
     --vectors "$VECTORS"
 python3 "$ROOT/tests/check_cpb.py" --bsinfo "$BUILD/bsinfo" \

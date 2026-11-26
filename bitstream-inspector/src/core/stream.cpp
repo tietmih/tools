@@ -221,6 +221,7 @@ void Stream::analyze(std::string& error) {
     associateNonVcl();
     computeDisplayOrder();
     computeReferenceLists();
+    computeBitAllocation();
     analyzeSeiHrd();
     computeCpbModel();
   }
@@ -791,6 +792,96 @@ void Stream::computeReferenceLists() {
       }
     }
   }
+}
+
+void Stream::computeBitAllocation() {
+  for (auto& frame : frames_) frame.bits = BitAllocation();
+  for (const auto& entry : nals_) {
+    if (entry.frame_index >= frames_.size()) continue;
+    BitAllocation& bits = frames_[entry.frame_index].bits;
+    const uint64_t bytes = static_cast<uint64_t>(entry.unit.size) * 8;
+    const int type = entry.unit.nal_type;
+    bits.total += bytes;
+    if (entry.is_vcl) {
+      bits.other += bytes;
+    } else if (codec_ == Codec::H264) {
+      if (type == 7 || type == 8)
+        bits.parameter_sets += bytes;
+      else if (type == 6)
+        bits.sei += bytes;
+      else if (type == 12)
+        bits.filler += bytes;
+      else
+        bits.other += bytes;
+    } else {
+      if (type == 32 || type == 33 || type == 34)
+        bits.parameter_sets += bytes;
+      else if (type == 39 || type == 40)
+        bits.sei += bytes;
+      else if (type == 38)
+        bits.filler += bytes;
+      else
+        bits.other += bytes;
+    }
+  }
+  for (auto& frame : frames_) {
+    uint64_t vcl = frame.bits.other;
+    const uint64_t header = std::min<uint64_t>(frame.slice_header_bits, vcl);
+    frame.bits.slice_headers = header;
+    frame.bits.slice_payload = vcl - header;
+    frame.bits.other = 0;
+  }
+}
+
+std::string Stream::bitAllocationCsv() const {
+  std::string out =
+      "index,type,poc,total_bits,parameter_sets_bits,sei_bits,"
+      "slice_header_bits,slice_payload_bits,filler_bits,other_bits\r\n";
+  for (const auto& f : frames_) {
+    out += std::to_string(f.index);
+    out += ',';
+    out += frameTypeName(f);
+    out += ',';
+    out += std::to_string(f.poc);
+    out += ',';
+    out += std::to_string(static_cast<unsigned long long>(f.bits.total));
+    out += ',';
+    out +=
+        std::to_string(static_cast<unsigned long long>(f.bits.parameter_sets));
+    out += ',';
+    out += std::to_string(static_cast<unsigned long long>(f.bits.sei));
+    out += ',';
+    out +=
+        std::to_string(static_cast<unsigned long long>(f.bits.slice_headers));
+    out += ',';
+    out +=
+        std::to_string(static_cast<unsigned long long>(f.bits.slice_payload));
+    out += ',';
+    out += std::to_string(static_cast<unsigned long long>(f.bits.filler));
+    out += ',';
+    out += std::to_string(static_cast<unsigned long long>(f.bits.other));
+    out += "\r\n";
+  }
+  return out;
+}
+
+double Stream::windowBitrate(int start_frame, int end_frame) const {
+  if (frames_.empty()) return 0.0;
+  start_frame = std::max(0, start_frame);
+  end_frame = std::min(end_frame, static_cast<int>(frames_.size()));
+  if (end_frame <= start_frame) return 0.0;
+  uint64_t bits = 0;
+  for (int i = start_frame; i < end_frame; i++)
+    bits += frames_[static_cast<size_t>(i)].bits.total;
+  double duration = 0.0;
+  const auto& first = frames_[static_cast<size_t>(start_frame)];
+  const auto& last = frames_[static_cast<size_t>(end_frame - 1)];
+  if (first.has_timing && last.has_timing)
+    duration = last.time_sec - first.time_sec;
+  if (duration <= 0.0 && fps() > 0.0)
+    duration = static_cast<double>(end_frame - start_frame) / fps();
+  if (duration <= 0.0) return 0.0;
+  return static_cast<double>(bits) / duration;
 }
 
 void Stream::computeDisplayOrder() {

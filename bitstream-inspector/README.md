@@ -50,8 +50,8 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
   for containers and raw elementary streams (decoded from the GOP start).
   Hovering shows Y/Cb/Cr and RGB values; colour matrix and range can be
   overridden for the preview only.
-- **Charts**: frame-size bars with a picture-type strip, or CPB0 occupancy.
-  Click to jump.
+- **Charts**: frame-size bars with a picture-type strip, per-AU bit allocation,
+  or CPB0 occupancy. Click to jump.
 - **References**: a Refs tab lists the selected frame's L0/L1 POCs, DPB count
   and missing references; double-clicking a reference jumps to that frame.
 - **Thumbnails**: lazy, cached thumbnail strip with GOP boundaries; prev/next
@@ -213,6 +213,7 @@ bsinfo stream.h265 --frames           # frame table
 bsinfo stream.h264 --tree 4           # syntax tree of NAL 4
 bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
 bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB occupancy model
+bsinfo stream.h264 --bits --csv-bits b.csv  # per-AU bit allocation
 bsinfo stream.h264 --json             # machine-readable output
 bsinfo --batch vectors/               # JSON array for a directory
 ```

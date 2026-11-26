@@ -62,6 +62,7 @@ enum : int {
   IDM_VIEW_NEXT_KEY = 2105,
   IDM_VIEW_CHART_SIZE = 2106,
   IDM_VIEW_CHART_CPB = 2107,
+  IDM_VIEW_CHART_BITS = 2117,
   IDM_VIEW_MATRIX_AUTO = 2108,
   IDM_VIEW_MATRIX_601 = 2109,
   IDM_VIEW_MATRIX_709 = 2110,
@@ -393,6 +394,8 @@ void createMenu(HWND hwnd) {
               tr(L"Chart: &Frame Size", L"图表：帧大小(&F)"));
   AppendMenuW(view, MF_STRING, IDM_VIEW_CHART_CPB,
               tr(L"Chart: &CPB Occupancy", L"图表：CPB 占用(&C)"));
+  AppendMenuW(view, MF_STRING, IDM_VIEW_CHART_BITS,
+              tr(L"Chart: &Bit Allocation", L"图表：比特分配(&B)"));
   CheckMenuRadioItem(view, IDM_VIEW_CHART_SIZE, IDM_VIEW_CHART_CPB,
                      IDM_VIEW_CHART_SIZE, MF_BYCOMMAND);
 
@@ -1458,6 +1461,9 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
           CheckMenuRadioItem(GetMenu(hwnd), IDM_VIEW_CHART_SIZE,
                              IDM_VIEW_CHART_CPB, IDM_VIEW_CHART_CPB,
                              MF_BYCOMMAND);
+          return 0;
+        case IDM_VIEW_CHART_BITS:
+          g_app.chart.setMode(ChartView::ChartMode::Bits);
           return 0;
         case IDM_VIEW_RELOAD:
           if (!g_app.path.empty()) openFile(g_app.path);

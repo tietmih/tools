@@ -29,6 +29,16 @@ struct FrameRefs {
   bool computed = false;
 };
 
+struct BitAllocation {
+  uint64_t parameter_sets = 0;
+  uint64_t sei = 0;
+  uint64_t slice_headers = 0;
+  uint64_t slice_payload = 0;
+  uint64_t filler = 0;
+  uint64_t other = 0;
+  uint64_t total = 0;
+};
+
 struct FrameInfo {
   int index = 0;  // decode order index within the stream
   int poc = 0;
@@ -54,6 +64,7 @@ struct FrameInfo {
   H264SliceInfo h264_slice;
   H265SliceInfo h265_slice;
   FrameRefs refs;
+  BitAllocation bits;
   // Filled in when the stream came from a container (or a demuxer with timing).
   int64_t pts = 0;
   int64_t dts = 0;
@@ -111,6 +122,8 @@ class Stream {
   bool videoFullRange() const;
   std::string hdrSummary() const;
   std::string cpbCsv() const;
+  std::string bitAllocationCsv() const;
+  double windowBitrate(int start_frame, int end_frame) const;
 
   std::string streamSummary() const;
   double fps() const;
@@ -137,6 +150,7 @@ class Stream {
   void computeCpbModel();
   void computeDisplayOrder();
   void computeReferenceLists();
+  void computeBitAllocation();
   bool makeSeiHrdContext(int sps_version, bool hevc, SeiHrdContext& ctx) const;
   void associateNonVcl();
   bool looksLikeHevc(const uint8_t* data, size_t size) const;

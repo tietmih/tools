@@ -44,7 +44,8 @@ Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表�
 - **画面页**：后台线程解码选中的帧。容器和无时间戳裸流都显示精确目标帧（裸流
   从 GOP 起点顺序解码）。鼠标悬停显示 Y/Cb/Cr 和 RGB；色彩矩阵与范围可覆盖，
   仅影响预览。
-- **图表**：逐帧大小柱状图 + 帧类型色带，或 CPB0 占用曲线；点击跳帧。
+- **图表**：逐帧大小柱状图 + 帧类型色带、逐 AU 比特分配，或 CPB0 占用曲线；
+  点击跳帧。
 - **参考帧**：Refs 标签页列出当前帧的 L0/L1 POC、DPB 数量和缺失参考；双击参考
   帧可跳转。
 - **缩略图**：懒加载、带缓存的缩略图条，标出 GOP 边界；支持上一个/下一个 GOP。
@@ -196,6 +197,7 @@ bsinfo stream.h265 --frames           # 帧表
 bsinfo stream.h264 --tree 4           # NAL 4 的语法树
 bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
 bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB 占用模型
+bsinfo stream.h264 --bits --csv-bits b.csv  # 逐 AU 比特分配
 bsinfo stream.h264 --json             # 机器可读输出
 bsinfo --batch vectors/               # 目录的 JSON 数组
 ```

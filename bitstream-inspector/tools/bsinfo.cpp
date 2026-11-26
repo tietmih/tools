@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
     std::fprintf(stderr,
                  "usage: bsinfo <file.h264|file.h265> [--frames] [--tree "
                  "<nal-index>] [--cpb] [--refs] [--json] [--batch <dir>] "
-                 "[--csv-cpb <path>]\n");
+                 "[--csv-cpb <path>] [--bits] [--csv-bits <path>]\n");
     return 2;
   }
   Stream s;
@@ -177,11 +177,13 @@ int main(int argc, char** argv) {
   bool showFrames = false;
   bool showCpb = false;
   bool showRefs = false;
+  bool showBits = false;
   bool json = false;
   long treeIndex = -1;
   const char* csvFrames = nullptr;
   const char* csvNals = nullptr;
   const char* csvCpb = nullptr;
+  const char* csvBits = nullptr;
   for (int i = 2; i < argc; i++) {
     if (std::strcmp(argv[i], "--frames") == 0)
       showFrames = true;
@@ -197,6 +199,10 @@ int main(int argc, char** argv) {
       showRefs = true;
     else if (std::strcmp(argv[i], "--json") == 0)
       json = true;
+    else if (std::strcmp(argv[i], "--bits") == 0)
+      showBits = true;
+    else if (std::strcmp(argv[i], "--csv-bits") == 0 && i + 1 < argc)
+      csvBits = argv[++i];
     else if (std::strcmp(argv[i], "--csv-cpb") == 0 && i + 1 < argc)
       csvCpb = argv[++i];
   }
@@ -225,6 +231,26 @@ int main(int argc, char** argv) {
   if (csvFrames) writeCsv(csvFrames, s.framesCsv());
   if (csvNals) writeCsv(csvNals, s.nalsCsv());
   if (csvCpb) writeCsv(csvCpb, s.cpbCsv());
+  if (csvBits) writeCsv(csvBits, s.bitAllocationCsv());
+
+  if (showBits) {
+    for (const auto& f : s.frames()) {
+      std::printf(
+          "bits %d %c total=%llu ps=%llu sei=%llu hdr=%llu payload=%llu "
+          "filler=%llu other=%llu\n",
+          f.index, f.picture_type,
+          static_cast<unsigned long long>(f.bits.total),
+          static_cast<unsigned long long>(f.bits.parameter_sets),
+          static_cast<unsigned long long>(f.bits.sei),
+          static_cast<unsigned long long>(f.bits.slice_headers),
+          static_cast<unsigned long long>(f.bits.slice_payload),
+          static_cast<unsigned long long>(f.bits.filler),
+          static_cast<unsigned long long>(f.bits.other));
+    }
+    double rate = s.windowBitrate(0, static_cast<int>(s.frames().size()));
+    std::printf("window_bitrate_bps=%.3f frames=%zu\n", rate,
+                s.frames().size());
+  }
 
   if (showRefs) {
     for (const auto& f : s.frames()) {
@@ -274,7 +300,7 @@ int main(int argc, char** argv) {
     for (const auto& r : tree) printTree(r, 0);
   }
 
-  if (treeIndex < 0 && !showFrames) {
+  if (treeIndex < 0 && !showFrames && !showCpb && !showRefs && !showBits) {
     for (size_t i = 0; i < s.nals().size(); i++) {
       const NalEntry& e = s.nals()[i];
       std::printf("[%4zu] off=%-9zu size=%-7zu type=%-3d %-32s %s%s%s\n", i,

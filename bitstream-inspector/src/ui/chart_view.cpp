@@ -124,6 +124,11 @@ void ChartView::paintTo(HDC target, const RECT& rc) {
   const auto& frames = stream_->frames();
 
   Plot plot = {px(10), rc.right - px(10), px(34), rc.bottom - px(22)};
+  if (mode_ == ChartMode::Bits) {
+    paintBits(dc, rc);
+    finish();
+    return;
+  }
   if (mode_ == ChartMode::Cpb) {
     paintCpb(dc, rc);
     finish();
@@ -242,6 +247,66 @@ void ChartView::paintTo(HDC target, const RECT& rc) {
   }
 
   finish();
+}
+
+void ChartView::paintBits(HDC dc, const RECT& rc) {
+  SelectObject(dc, uiFont());
+  SetBkMode(dc, TRANSPARENT);
+  if (!stream_ || stream_->frames().empty()) return;
+  Plot plot = {px(10), rc.right - px(10), px(34), rc.bottom - px(22)};
+  int width = plot.right - plot.left;
+  int height = plot.bottom - plot.top;
+  if (width <= 4 || height <= 4) return;
+  const auto& frames = stream_->frames();
+  uint64_t max_total = 1;
+  for (const auto& f : frames) max_total = std::max(max_total, f.bits.total);
+  const size_t count = frames.size();
+  const COLORREF colors[6] = {RGB(110, 150, 210), RGB(210, 130, 60),
+                              RGB(90, 170, 110),  RGB(150, 100, 190),
+                              RGB(150, 150, 150), RGB(200, 80, 80)};
+  for (int x = plot.left; x < plot.right; x++) {
+    size_t first =
+        static_cast<size_t>(x - plot.left) * count / static_cast<size_t>(width);
+    size_t last = static_cast<size_t>(x - plot.left + 1) * count /
+                  static_cast<size_t>(width);
+    if (last <= first) last = first + 1;
+    if (last > count) last = count;
+    uint64_t values[6] = {};
+    for (size_t i = first; i < last; i++) {
+      values[0] += frames[i].bits.parameter_sets;
+      values[1] += frames[i].bits.sei;
+      values[2] += frames[i].bits.slice_headers;
+      values[3] += frames[i].bits.slice_payload;
+      values[4] += frames[i].bits.filler;
+      values[5] += frames[i].bits.other;
+    }
+    int bottom = plot.bottom;
+    for (int c = 0; c < 6; c++) {
+      if (values[c] == 0) continue;
+      int h =
+          static_cast<int>(static_cast<double>(values[c]) / max_total * height);
+      if (h < 1) h = 1;
+      RECT bar = {x, std::max(plot.top, bottom - h), x + 1, bottom};
+      HBRUSH brush = CreateSolidBrush(colors[c]);
+      FillRect(dc, &bar, brush);
+      DeleteObject(brush);
+      bottom = bar.top;
+    }
+  }
+  SetTextColor(dc, RGB(100, 100, 100));
+  std::wstring title = tr(L"bit allocation (bits)", L"比特分配（bit）");
+  TextOutW(dc, plot.left, px(2), title.c_str(), static_cast<int>(title.size()));
+  double fps = stream_->fps();
+  if (!(fps > 0.0)) fps = 25.0;
+  int window = std::max(1, static_cast<int>(fps + 0.5));
+  int end = std::min(static_cast<int>(count), std::max(0, selected_) + 1);
+  int start = std::max(0, end - window);
+  double rate = stream_->windowBitrate(start, end);
+  wchar_t footer[128];
+  swprintf(footer, 128, L"window %.2f s  %.0f b/s",
+           static_cast<double>(end - start) / fps, rate);
+  TextOutW(dc, plot.left, plot.bottom + px(4), footer,
+           static_cast<int>(wcslen(footer)));
 }
 
 void ChartView::paintCpb(HDC dc, const RECT& rc) {
