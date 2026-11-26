@@ -213,6 +213,8 @@ bsinfo stream.h265 --frames           # frame table
 bsinfo stream.h264 --tree 4           # syntax tree of NAL 4
 bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
 bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB occupancy model
+bsinfo stream.h264 --json             # machine-readable output
+bsinfo --batch vectors/               # JSON array for a directory
 ```
 
 `mtest` exercises the container/demux/decode path:
@@ -221,6 +223,7 @@ bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB occupancy model
 mtest movie.mp4                       # container info, packet map, frame timing
 mtest movie.mkv --frame 10 --ppm out.ppm
 mtest stream.h264 --frame 5 --yuv frame.yuv   # native planar YUV
+mtest stream.h264 --range 0:30 --yuv range.yuv  # YUV frame range
 ```
 
 ## Verification status

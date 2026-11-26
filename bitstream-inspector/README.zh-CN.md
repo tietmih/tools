@@ -196,6 +196,8 @@ bsinfo stream.h265 --frames           # 帧表
 bsinfo stream.h264 --tree 4           # NAL 4 的语法树
 bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
 bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB 占用模型
+bsinfo stream.h264 --json             # 机器可读输出
+bsinfo --batch vectors/               # 目录的 JSON 数组
 ```
 
 `mtest` 用于验证容器解封装/解码链路：
@@ -204,6 +206,7 @@ bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB 占用模型
 mtest movie.mp4                       # 容器信息、packet 映射、帧时间
 mtest movie.mkv --frame 10 --ppm out.ppm
 mtest stream.h264 --frame 5 --yuv frame.yuv   # 原生 planar YUV
+mtest stream.h264 --range 0:30 --yuv range.yuv  # YUV 帧范围
 ```
 
 ## 验证状态

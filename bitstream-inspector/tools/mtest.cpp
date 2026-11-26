@@ -9,14 +9,19 @@
 
 using namespace bs;
 
-static bool writeYuv(const char* path, const DecodedFrame& frame) {
-  FILE* f = std::fopen(path, "wb");
-  if (!f) return false;
+static bool writeYuvPlanes(FILE* f, const DecodedFrame& frame) {
   bool ok = true;
   for (const auto& plane : frame.planes) {
     if (std::fwrite(plane.data(), 1, plane.size(), f) != plane.size())
       ok = false;
   }
+  return ok;
+}
+
+static bool writeYuv(const char* path, const DecodedFrame& frame) {
+  FILE* f = std::fopen(path, "wb");
+  if (!f) return false;
+  const bool ok = writeYuvPlanes(f, frame);
   std::fclose(f);
   return ok;
 }
@@ -41,7 +46,7 @@ int main(int argc, char** argv) {
   if (argc < 2) {
     std::fprintf(stderr,
                  "usage: mtest <file> [--frame N] [--ppm out.ppm] "
-                 "[--yuv out.yuv]\n");
+                 "[--yuv out.yuv] [--range start:end]\n");
     return 2;
   }
   MediaFile media;
@@ -84,6 +89,7 @@ int main(int argc, char** argv) {
   int frame_index = 0;
   const char* ppm_path = nullptr;
   const char* yuv_path = nullptr;
+  const char* range = nullptr;
   for (int i = 2; i < argc; i++) {
     if (std::strcmp(argv[i], "--frame") == 0 && i + 1 < argc)
       frame_index = std::atoi(argv[++i]);
@@ -91,7 +97,39 @@ int main(int argc, char** argv) {
       ppm_path = argv[++i];
     else if (std::strcmp(argv[i], "--yuv") == 0 && i + 1 < argc)
       yuv_path = argv[++i];
+    else if (std::strcmp(argv[i], "--range") == 0 && i + 1 < argc)
+      range = argv[++i];
   }
+  if (range && yuv_path) {
+    int first = 0, last = 0;
+    if (std::sscanf(range, "%d:%d", &first, &last) != 2 || first < 0 ||
+        last < first) {
+      std::fprintf(stderr, "invalid --range (expected start:end)\n");
+      return 2;
+    }
+    FILE* out = std::fopen(yuv_path, "wb");
+    if (!out) {
+      std::fprintf(stderr, "cannot write %s\n", yuv_path);
+      return 1;
+    }
+    int written = 0;
+    for (int index = first; index < last; index++) {
+      DecodedFrame frame;
+      bool keyframe_only = false;
+      if (!media.decodeFrameAt(stream, index, frame, keyframe_only, error))
+        break;
+      if (!writeYuvPlanes(out, frame)) break;
+      written++;
+    }
+    std::fclose(out);
+    std::printf("wrote %s (%d frames)\n", yuv_path, written);
+    if (written != last - first) {
+      std::fprintf(stderr, "decode failed: %s\n", error.c_str());
+      return 1;
+    }
+    return 0;
+  }
+
   if (ppm_path || yuv_path) {
     DecodedFrame frame;
     bool keyframe_only = false;

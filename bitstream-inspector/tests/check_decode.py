@@ -149,6 +149,19 @@ def check_yuv_export(mtest, ffmpeg, vectors):
              "1", "-f", "rawvideo", "-pix_fmt", pix_fmt, ref])
         if open(ours, "rb").read() != open(ref, "rb").read():
             errors.append(f"{name}: raw YUV planes differ from ffmpeg")
+    # A short range export must match three consecutive rawvideo frames.
+    name = "h264_bf0.h264"
+    path = os.path.join(vectors, name)
+    ours = os.path.join(vectors, name + ".range.yuv")
+    ref = os.path.join(vectors, name + ".range.ref.yuv")
+    proc = run([mtest, path, "--range", "0:3", "--yuv", ours], check=False)
+    if proc.returncode != 0:
+        errors.append(f"{name}: YUV range export failed")
+    else:
+        run([ffmpeg, "-v", "error", "-y", "-i", path, "-frames:v", "3",
+             "-f", "rawvideo", "-pix_fmt", "yuv420p", ref])
+        if open(ours, "rb").read() != open(ref, "rb").read():
+            errors.append(f"{name}: YUV range differs from ffmpeg")
     return errors
 
 

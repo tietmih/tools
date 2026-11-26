@@ -1,7 +1,10 @@
 // Host-side validation CLI. Prints a parse digest that can be diffed against
 // ffprobe/ffmpeg output for the same elementary stream.
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <string>
 
 #include "core/stream.h"
@@ -18,11 +21,151 @@ static void printTree(const SyntaxNode& n, int depth) {
   for (const auto& c : n.children) printTree(c, depth + 1);
 }
 
+static std::string jsonEscape(const std::string& text) {
+  std::string out;
+  for (char c : text) {
+    switch (c) {
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (static_cast<unsigned char>(c) < 0x20) {
+          char buf[8];
+          std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(c));
+          out += buf;
+        } else {
+          out += c;
+        }
+    }
+  }
+  return out;
+}
+
+static std::string nodeJson(const SyntaxNode& node) {
+  std::string out = "{\"name\":\"" + jsonEscape(node.name) + "\",\"value\":\"" +
+                    jsonEscape(node.value) +
+                    "\",\"bit\":" + std::to_string(node.bit_pos) +
+                    ",\"len\":" + std::to_string(node.bit_len) +
+                    ",\"error\":" + (node.is_error ? "true" : "false");
+  if (!node.children.empty()) {
+    out += ",\"children\":[";
+    for (size_t i = 0; i < node.children.size(); i++) {
+      if (i) out += ',';
+      out += nodeJson(node.children[i]);
+    }
+    out += ']';
+  }
+  out += '}';
+  return out;
+}
+
+static void printStreamJson(const Stream& s, const char* path, long treeIndex) {
+  std::printf("{\"file\":\"%s\",", jsonEscape(path).c_str());
+  std::printf("\"summary\":\"%s\",", jsonEscape(s.streamSummary()).c_str());
+  std::printf("\"codec\":\"%s\",", codecName(s.codec()));
+  std::printf("\"frames\":[");
+  for (size_t i = 0; i < s.frames().size(); i++) {
+    const FrameInfo& f = s.frames()[i];
+    if (i) std::printf(",");
+    std::printf(
+        "{\"index\":%d,\"type\":\"%s\",\"poc\":%d,\"qp\":%d,"
+        "\"size\":%zu,\"offset\":%zu,\"slices\":%d,\"nals\":%d,"
+        "\"dpb\":%d,\"l0\":[",
+        f.index, s.frameTypeName(f).c_str(), f.poc, f.qp, f.byte_size,
+        f.byte_offset, f.slice_count, f.nal_count, f.refs.dpb_count);
+    for (size_t k = 0; k < f.refs.l0_pocs.size(); k++)
+      std::printf("%s%d", k ? "," : "", f.refs.l0_pocs[k]);
+    std::printf("],\"l1\":[");
+    for (size_t k = 0; k < f.refs.l1_pocs.size(); k++)
+      std::printf("%s%d", k ? "," : "", f.refs.l1_pocs[k]);
+    std::printf("],\"missing\":[");
+    for (size_t k = 0; k < f.refs.missing_pocs.size(); k++)
+      std::printf("%s%d", k ? "," : "", f.refs.missing_pocs[k]);
+    std::printf("]}");
+  }
+  std::printf("],\"nals\":[");
+  for (size_t i = 0; i < s.nals().size(); i++) {
+    const NalEntry& e = s.nals()[i];
+    if (i) std::printf(",");
+    std::printf(
+        "{\"index\":%zu,\"offset\":%zu,\"size\":%zu,\"type\":%d,"
+        "\"summary\":\"%s\",\"error\":\"%s\"}",
+        i, e.unit.offset, e.unit.size, e.unit.nal_type,
+        jsonEscape(e.summary).c_str(), jsonEscape(e.error).c_str());
+  }
+  std::printf("]");
+  if (treeIndex >= 0 && treeIndex < static_cast<long>(s.nals().size())) {
+    auto tree = s.syntaxTree(static_cast<size_t>(treeIndex));
+    std::printf(",\"tree\":[");
+    for (size_t i = 0; i < tree.size(); i++) {
+      if (i) std::printf(",");
+      std::printf("%s", nodeJson(tree[i]).c_str());
+    }
+    std::printf("]");
+  }
+  std::printf("}\n");
+}
+
+static bool isStreamFile(const std::filesystem::path& path) {
+  std::string ext = path.extension().string();
+  for (char& c : ext) c = static_cast<char>(std::tolower(c));
+  return ext == ".h264" || ext == ".264" || ext == ".avc" || ext == ".h265" ||
+         ext == ".265" || ext == ".hevc";
+}
+
+static int runBatchJson(const char* directory) {
+  std::error_code ec;
+  std::vector<std::filesystem::path> files;
+  for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+    if (entry.is_regular_file() && isStreamFile(entry.path()))
+      files.push_back(entry.path());
+  }
+  if (ec) {
+    std::fprintf(stderr, "error: cannot read directory %s\n", directory);
+    return 1;
+  }
+  std::sort(files.begin(), files.end());
+  std::printf("[");
+  bool first = true;
+  for (const auto& path : files) {
+    Stream stream;
+    std::string error;
+    if (!stream.openFile(path.string(), error)) {
+      if (!first) std::printf(",");
+      first = false;
+      std::printf("{\"file\":\"%s\",\"error\":\"%s\"}",
+                  jsonEscape(path.string()).c_str(), jsonEscape(error).c_str());
+      continue;
+    }
+    if (!first) std::printf(",");
+    first = false;
+    printStreamJson(stream, path.string().c_str(), -1);
+  }
+  std::printf("]\n");
+  return 0;
+}
+
 int main(int argc, char** argv) {
+  for (int i = 1; i + 1 < argc; i++) {
+    if (std::strcmp(argv[i], "--batch") == 0) return runBatchJson(argv[i + 1]);
+  }
   if (argc < 2) {
     std::fprintf(stderr,
                  "usage: bsinfo <file.h264|file.h265> [--frames] [--tree "
-                 "<nal-index>] [--cpb] [--refs] [--csv-cpb <path>]\n");
+                 "<nal-index>] [--cpb] [--refs] [--json] [--batch <dir>] "
+                 "[--csv-cpb <path>]\n");
     return 2;
   }
   Stream s;
@@ -31,13 +174,10 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "error: %s\n", err.c_str());
     return 1;
   }
-  std::printf("%s\n", s.streamSummary().c_str());
-  std::printf("codec=%s nals=%zu frames=%zu\n", codecName(s.codec()),
-              s.nals().size(), s.frames().size());
-
   bool showFrames = false;
   bool showCpb = false;
   bool showRefs = false;
+  bool json = false;
   long treeIndex = -1;
   const char* csvFrames = nullptr;
   const char* csvNals = nullptr;
@@ -55,9 +195,19 @@ int main(int argc, char** argv) {
       showCpb = true;
     else if (std::strcmp(argv[i], "--refs") == 0)
       showRefs = true;
+    else if (std::strcmp(argv[i], "--json") == 0)
+      json = true;
     else if (std::strcmp(argv[i], "--csv-cpb") == 0 && i + 1 < argc)
       csvCpb = argv[++i];
   }
+
+  if (json) {
+    printStreamJson(s, argv[1], treeIndex);
+    return 0;
+  }
+  std::printf("%s\n", s.streamSummary().c_str());
+  std::printf("codec=%s nals=%zu frames=%zu\n", codecName(s.codec()),
+              s.nals().size(), s.frames().size());
 
   auto writeCsv = [](const char* path, const std::string& text) {
     FILE* file = std::fopen(path, "wb");
