@@ -42,6 +42,8 @@ python3 "$ROOT/tests/check_sei.py" --ffmpeg "$REF_FFMPEG" \
     --bsinfo "$BUILD/bsinfo" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_hrd.py" --ffmpeg "$REF_FFMPEG" \
     --bsinfo "$BUILD/bsinfo" --vectors "$VECTORS"
+python3 "$ROOT/tests/check_refs.py" --bsinfo "$BUILD/bsinfo" \
+    --vectors "$VECTORS"
 python3 "$ROOT/tests/check_cpb.py" --bsinfo "$BUILD/bsinfo" \
     --vectors "$VECTORS"
 if [ -x "$BUILD/mtest" ]; then

@@ -503,30 +503,36 @@ void parseH264SliceHeader(BitReader& br, SyntaxBuilder* sb, H264State& state,
     Section m(r.sb(), "ref_pic_list_modification");
     bool l0_mod = false;
     r.flag("ref_pic_list_modification_flag_l0", l0_mod);
+    info.ref_pic_list_modification_flag_l0 = l0_mod;
     if (l0_mod) {
       int c = 0;
       while (c < 66 && !r.fail()) {
         uint32_t idc = r.ue("modification_of_pic_nums_idc");
         if (idc == 3) break;
+        int arg = 0;
         if (idc == 0 || idc == 1)
-          r.ue("abs_diff_pic_num_minus1");
+          arg = static_cast<int>(r.ue("abs_diff_pic_num_minus1"));
         else if (idc == 2)
-          r.ue("long_term_pic_num");
+          arg = static_cast<int>(r.ue("long_term_pic_num"));
+        info.ref_mod_l0.push_back({static_cast<int>(idc), arg});
         c++;
       }
     }
     if (info.slice_type == SliceType::B) {
       bool l1_mod = false;
       r.flag("ref_pic_list_modification_flag_l1", l1_mod);
+      info.ref_pic_list_modification_flag_l1 = l1_mod;
       if (l1_mod) {
         int c = 0;
         while (c < 66 && !r.fail()) {
           uint32_t idc = r.ue("modification_of_pic_nums_idc");
           if (idc == 3) break;
+          int arg = 0;
           if (idc == 0 || idc == 1)
-            r.ue("abs_diff_pic_num_minus1");
+            arg = static_cast<int>(r.ue("abs_diff_pic_num_minus1"));
           else if (idc == 2)
-            r.ue("long_term_pic_num");
+            arg = static_cast<int>(r.ue("long_term_pic_num"));
+          info.ref_mod_l1.push_back({static_cast<int>(idc), arg});
           c++;
         }
       }
@@ -589,18 +595,25 @@ void parseH264SliceHeader(BitReader& br, SyntaxBuilder* sb, H264State& state,
       bool no_output = false, long_term = false;
       r.flag("no_output_of_prior_pics_flag", no_output);
       r.flag("long_term_reference_flag", long_term);
+      info.long_term_reference_flag = long_term;
     } else {
       bool adaptive = false;
       r.flag("adaptive_ref_pic_marking_mode_flag", adaptive);
+      info.adaptive_ref_pic_marking = adaptive;
       if (adaptive) {
         int c = 0;
         while (c < 66 && !r.fail()) {
           uint32_t op = r.ue("memory_management_control_operation");
           if (op == 0) break;
-          if (op == 1 || op == 3) r.ue("difference_of_pic_nums_minus1");
-          if (op == 2) r.ue("long_term_pic_num");
-          if (op == 3 || op == 6) r.ue("long_term_frame_idx");
-          if (op == 4) r.ue("max_long_term_frame_idx_plus1");
+          int arg1 = 0, arg2 = 0;
+          if (op == 1 || op == 3)
+            arg1 = static_cast<int>(r.ue("difference_of_pic_nums_minus1"));
+          if (op == 2) arg1 = static_cast<int>(r.ue("long_term_pic_num"));
+          if (op == 3 || op == 6)
+            arg2 = static_cast<int>(r.ue("long_term_frame_idx"));
+          if (op == 4)
+            arg1 = static_cast<int>(r.ue("max_long_term_frame_idx_plus1"));
+          info.mmco.push_back({static_cast<int>(op), arg1, arg2});
           c++;
         }
       }

@@ -121,6 +121,7 @@ if(WIN32)
         src/ui/frame_list.cpp
         src/ui/syntax_tree.cpp
         src/ui/thumbnail_strip.cpp
+        src/ui/refs_view.cpp
         src/ui/hex_view.cpp
         src/ui/video_view.cpp
         src/ui/chart_view.cpp

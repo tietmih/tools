@@ -21,6 +21,14 @@ enum class Codec {
 
 const char* codecName(Codec c);
 
+struct FrameRefs {
+  std::vector<int> l0_pocs;
+  std::vector<int> l1_pocs;
+  std::vector<int> missing_pocs;
+  int dpb_count = 0;
+  bool computed = false;
+};
+
 struct FrameInfo {
   int index = 0;  // decode order index within the stream
   int poc = 0;
@@ -43,6 +51,9 @@ struct FrameInfo {
   int pps_version = -1;
   int display_index = -1;  // position in display order, across the file
   int gop_start = -1;      // decode-order index of the GOP's first frame
+  H264SliceInfo h264_slice;
+  H265SliceInfo h265_slice;
+  FrameRefs refs;
   // Filled in when the stream came from a container (or a demuxer with timing).
   int64_t pts = 0;
   int64_t dts = 0;
@@ -125,6 +136,7 @@ class Stream {
   void analyzeSeiHrd();
   void computeCpbModel();
   void computeDisplayOrder();
+  void computeReferenceLists();
   bool makeSeiHrdContext(int sps_version, bool hevc, SeiHrdContext& ctx) const;
   void associateNonVcl();
   bool looksLikeHevc(const uint8_t* data, size_t size) const;

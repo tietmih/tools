@@ -220,6 +220,7 @@ void Stream::analyze(std::string& error) {
   if (!frames_.empty()) {
     associateNonVcl();
     computeDisplayOrder();
+    computeReferenceLists();
     analyzeSeiHrd();
     computeCpbModel();
   }
@@ -390,6 +391,7 @@ void Stream::analyzeH264(std::string& error) {
           cur.byte_offset = n.offset;
           cur.sps_version = h264_cur_sps_;
           cur.pps_version = h264_cur_pps_;
+          cur.h264_slice = info;
           cur.picture_type = sliceTypeChar(info.slice_type);
           cur.qp = 26 + state.pps.pic_init_qp_minus26 + info.slice_qp_delta;
           have_frame = true;
@@ -558,6 +560,7 @@ void Stream::analyzeH265(std::string& error) {
           cur.byte_offset = n.offset;
           cur.sps_version = h265_cur_sps_;
           cur.pps_version = h265_cur_pps_;
+          cur.h265_slice = info;
           cur.poc = info.pic_order_cnt_lsb;
           if (info.slice_type == SliceType::I || info.idr) {
             cur.picture_type = 'I';
@@ -604,6 +607,190 @@ void Stream::analyzeH265(std::string& error) {
 
   if (frames_.empty())
     error = "no decodable slices found (framing may not be Annex B)";
+}
+
+namespace {
+
+void addUnique(std::vector<int>& values, int value) {
+  if (std::find(values.begin(), values.end(), value) == values.end())
+    values.push_back(value);
+}
+
+}  // namespace
+
+void Stream::computeReferenceLists() {
+  if (codec_ == Codec::H265) {
+    const H265Sps& sps = h265_.sps;
+    int modulus = 1;
+    if (sps.log2_max_poc_lsb_minus4 >= 0 && sps.log2_max_poc_lsb_minus4 < 30)
+      modulus = 1 << (sps.log2_max_poc_lsb_minus4 + 4);
+    std::vector<int> prior;
+    for (auto& f : frames_) {
+      f.refs = FrameRefs();
+      if (!f.h265_slice.valid) continue;
+      const H265SliceInfo& info = f.h265_slice;
+      for (size_t i = 0; i < info.short_term_rps.delta_pocs.size(); i++) {
+        if (i >= info.short_term_rps.used.size() ||
+            !info.short_term_rps.used[i])
+          continue;
+        addUnique(f.refs.l0_pocs, f.poc + info.short_term_rps.delta_pocs[i]);
+        if (f.picture_type == 'B')
+          addUnique(f.refs.l1_pocs, f.poc + info.short_term_rps.delta_pocs[i]);
+      }
+      for (size_t i = 0; i < info.lt_poc_lsb.size(); i++) {
+        if (i >= info.lt_used.size() || !info.lt_used[i]) continue;
+        int base = f.poc - (modulus > 0 ? f.poc % modulus : 0);
+        int ref = base + info.lt_poc_lsb[i];
+        if (ref > f.poc + modulus / 2) ref -= modulus;
+        if (ref < f.poc - modulus / 2) ref += modulus;
+        if (i < info.lt_msb_present.size() && info.lt_msb_present[i] &&
+            i < info.lt_delta_msb_cycle.size())
+          ref -= static_cast<int>(info.lt_delta_msb_cycle[i]) * modulus;
+        addUnique(f.refs.l0_pocs, ref);
+        if (f.picture_type == 'B') addUnique(f.refs.l1_pocs, ref);
+      }
+      for (int ref : f.refs.l0_pocs) {
+        if (std::find(prior.begin(), prior.end(), ref) == prior.end())
+          addUnique(f.refs.missing_pocs, ref);
+      }
+      for (int ref : f.refs.l1_pocs) {
+        if (std::find(prior.begin(), prior.end(), ref) == prior.end())
+          addUnique(f.refs.missing_pocs, ref);
+      }
+      f.refs.dpb_count = static_cast<int>(f.refs.l0_pocs.size());
+      f.refs.computed = true;
+      addUnique(prior, f.poc);
+    }
+    return;
+  }
+
+  if (codec_ != Codec::H264) return;
+  struct Entry {
+    int poc = 0;
+    int frame_num = 0;
+    bool long_term = false;
+  };
+  const H264Sps& sps = h264_.sps;
+  const int max_refs = sps.max_num_ref_frames > 0 ? sps.max_num_ref_frames : 16;
+  const int max_frame_num = sps.frame_num_modulus();
+  std::vector<Entry> dpb;
+  for (auto& f : frames_) {
+    f.refs = FrameRefs();
+    if (!f.h264_slice.valid) continue;
+    const H264SliceInfo& info = f.h264_slice;
+    if (f.idr) dpb.clear();
+    std::vector<Entry*> refs;
+    refs.reserve(dpb.size());
+    for (auto& entry : dpb) refs.push_back(&entry);
+    std::sort(refs.begin(), refs.end(), [](const Entry* a, const Entry* b) {
+      if (a->long_term != b->long_term) return !a->long_term;
+      return a->frame_num < b->frame_num;
+    });
+    auto add_entry = [&](std::vector<int>& list, const Entry& entry) {
+      addUnique(list, entry.poc);
+    };
+    for (auto it = refs.rbegin(); it != refs.rend(); ++it) {
+      if (!(*it)->long_term) add_entry(f.refs.l0_pocs, **it);
+    }
+    for (auto* entry : refs) {
+      if (entry->long_term) add_entry(f.refs.l0_pocs, *entry);
+    }
+    if (f.picture_type == 'B') {
+      for (auto* entry : refs) {
+        if (!entry->long_term) add_entry(f.refs.l1_pocs, *entry);
+      }
+      for (auto* entry : refs) {
+        if (entry->long_term) add_entry(f.refs.l1_pocs, *entry);
+      }
+    }
+    auto apply_mods = [&](const std::vector<H264RefMod>& mods,
+                          std::vector<int>& list) {
+      for (const H264RefMod& mod : mods) {
+        if (mod.idc == 0 || mod.idc == 1) {
+          int target = f.frame_num;
+          if (mod.idc == 0)
+            target -= mod.arg + 1;
+          else
+            target += mod.arg + 1;
+          if (max_frame_num > 0)
+            target = (target + max_frame_num) % max_frame_num;
+          for (const Entry& entry : dpb) {
+            if (!entry.long_term && entry.frame_num == target) {
+              addUnique(list, entry.poc);
+              break;
+            }
+          }
+        } else if (mod.idc == 2) {
+          for (const Entry& entry : dpb) {
+            if (entry.long_term && entry.frame_num == mod.arg) {
+              addUnique(list, entry.poc);
+              break;
+            }
+          }
+        }
+      }
+    };
+    if (info.ref_pic_list_modification_flag_l0)
+      apply_mods(info.ref_mod_l0, f.refs.l0_pocs);
+    if (info.ref_pic_list_modification_flag_l1)
+      apply_mods(info.ref_mod_l1, f.refs.l1_pocs);
+    const int l0_active = info.num_ref_idx_l0_active_minus1 + 1;
+    const int l1_active = info.num_ref_idx_l1_active_minus1 + 1;
+    if (static_cast<int>(f.refs.l0_pocs.size()) > l0_active)
+      f.refs.l0_pocs.resize(static_cast<size_t>(l0_active));
+    if (static_cast<int>(f.refs.l1_pocs.size()) > l1_active)
+      f.refs.l1_pocs.resize(static_cast<size_t>(l1_active));
+    for (int ref : f.refs.l0_pocs) {
+      bool found = false;
+      for (const Entry& entry : dpb) found = found || entry.poc == ref;
+      if (!found) addUnique(f.refs.missing_pocs, ref);
+    }
+    for (int ref : f.refs.l1_pocs) {
+      bool found = false;
+      for (const Entry& entry : dpb) found = found || entry.poc == ref;
+      if (!found) addUnique(f.refs.missing_pocs, ref);
+    }
+    f.refs.dpb_count = static_cast<int>(dpb.size());
+    f.refs.computed = true;
+
+    if (f.ref) {
+      Entry entry;
+      entry.poc = f.poc;
+      entry.frame_num = f.frame_num;
+      entry.long_term = f.idr && info.long_term_reference_flag;
+      dpb.push_back(entry);
+      while (static_cast<int>(dpb.size()) > max_refs) {
+        auto it = std::find_if(dpb.begin(), dpb.end(),
+                               [](const Entry& e) { return !e.long_term; });
+        if (it == dpb.end()) break;
+        dpb.erase(it);
+      }
+      for (const H264Mmco& mmco : info.mmco) {
+        if (mmco.op == 1 || mmco.op == 2) {
+          int target = mmco.arg1;
+          if (mmco.op == 1) {
+            target = f.frame_num - (mmco.arg1 + 1);
+            if (max_frame_num > 0)
+              target = (target + max_frame_num) % max_frame_num;
+          }
+          dpb.erase(std::remove_if(
+                        dpb.begin(), dpb.end(),
+                        [&](const Entry& e) { return e.frame_num == target; }),
+                    dpb.end());
+        } else if (mmco.op == 3) {
+          int target = f.frame_num - (mmco.arg1 + 1);
+          if (max_frame_num > 0)
+            target = (target + max_frame_num) % max_frame_num;
+          for (Entry& e : dpb)
+            if (e.frame_num == target) e.long_term = true;
+        } else if (mmco.op == 5) {
+          dpb.clear();
+        } else if (mmco.op == 6) {
+          if (!dpb.empty()) dpb.back().long_term = true;
+        }
+      }
+    }
+  }
 }
 
 void Stream::computeDisplayOrder() {

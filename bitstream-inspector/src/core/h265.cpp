@@ -882,6 +882,7 @@ void parseH265SliceSegmentHeader(BitReader& br, SyntaxBuilder* sb,
       } else if (sps.st_rps.size() == 1) {
         slice_rps = sps.st_rps[0];
       }
+      info.short_term_rps = slice_rps;
       num_pic_total_curr = 0;
       for (uint8_t used : slice_rps.used) num_pic_total_curr += used ? 1 : 0;
 
@@ -898,6 +899,7 @@ void parseH265SliceSegmentHeader(BitReader& br, SyntaxBuilder* sb,
         }
         for (int i = 0; i < num_long_term_sps + num_long_term_pics; i++) {
           bool used = false;
+          int poc_lsb = 0;
           if (i < num_long_term_sps) {
             int idx = 0;
             if (sps.num_long_term_ref_pics_sps > 1) {
@@ -905,16 +907,25 @@ void parseH265SliceSegmentHeader(BitReader& br, SyntaxBuilder* sb,
               while ((1 << bits) < sps.num_long_term_ref_pics_sps) bits++;
               idx = static_cast<int>(r.u(bits, "lt_idx_sps"));
             }
-            if (idx >= 0 && idx < static_cast<int>(sps.lt_used_sps.size()))
+            if (idx >= 0 && idx < static_cast<int>(sps.lt_used_sps.size())) {
               used = sps.lt_used_sps[idx] != 0;
+              if (idx < static_cast<int>(sps.lt_poc_lsb_sps.size()))
+                poc_lsb = sps.lt_poc_lsb_sps[idx];
+            }
           } else {
-            r.u(sps.log2_max_poc_lsb_minus4 + 4, "poc_lsb_lt");
+            poc_lsb = static_cast<int>(
+                r.u(sps.log2_max_poc_lsb_minus4 + 4, "poc_lsb_lt"));
             r.flag("used_by_curr_pic_lt_flag", used);
           }
           bool msb_present = false;
           r.flag("delta_poc_msb_present_flag", msb_present);
-          if (msb_present) r.ue("delta_poc_msb_cycle_lt");
+          uint32_t delta_msb = 0;
+          if (msb_present) delta_msb = r.ue("delta_poc_msb_cycle_lt");
           lt_used.push_back(static_cast<uint8_t>(used));
+          info.lt_poc_lsb.push_back(poc_lsb);
+          info.lt_used.push_back(static_cast<uint8_t>(used));
+          info.lt_msb_present.push_back(static_cast<uint8_t>(msb_present));
+          info.lt_delta_msb_cycle.push_back(delta_msb);
         }
       }
       int num_pic_total_curr_lt = num_pic_total_curr;
@@ -924,6 +935,7 @@ void parseH265SliceSegmentHeader(BitReader& br, SyntaxBuilder* sb,
         r.flag("slice_temporal_mvp_enabled_flag", temporal_mvp);
 
       if (num_pic_total_curr < 0) num_pic_total_curr = 0;
+      info.num_pic_total_curr = num_pic_total_curr;
     }
     if (sps.sao_enabled) {
       r.flag("slice_sao_luma_flag", sao_luma);

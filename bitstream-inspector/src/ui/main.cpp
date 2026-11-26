@@ -18,6 +18,7 @@
 #include "ui/hex_view.h"
 #include "ui/image_export.h"
 #include "ui/lang.h"
+#include "ui/refs_view.h"
 #include "ui/syntax_tree.h"
 #include "ui/thumbnail_strip.h"
 #include "ui/ui_util.h"
@@ -45,6 +46,7 @@ enum : int {
   IDC_TAB = 1014,
   IDC_VIDEO_VIEW = 1015,
   IDC_THUMBNAILS = 1016,
+  IDC_REFS_VIEW = 1017,
 
   IDM_FILE_OPEN = 2001,
   IDM_FILE_EXIT = 2002,
@@ -110,6 +112,7 @@ struct App {
   SyntaxTree syntax_tree;
   HexView hex_view;
   VideoView video_view;
+  RefsView refs_view;
   ChartView chart;
   ThumbnailStrip thumbnails;
   HWND tabs = nullptr;
@@ -565,6 +568,20 @@ void updateStatus() {
             wide(g_app.stream.frameTypeName(f)) + L"   POC " +
             std::to_wstring(f.poc) + L"   QP " + std::to_wstring(f.qp) +
             L"   " + std::to_wstring(f.byte_size) + tr(L" B", L" 字节");
+    if (f.refs.computed) {
+      right += tr(L"   |   L0 ", L"   |   L0 ");
+      for (size_t i = 0; i < f.refs.l0_pocs.size(); i++)
+        right += (i ? L"," : L"") + std::to_wstring(f.refs.l0_pocs[i]);
+      if (!f.refs.l1_pocs.empty()) {
+        right += L"   L1 ";
+        for (size_t i = 0; i < f.refs.l1_pocs.size(); i++)
+          right += (i ? L"," : L"") + std::to_wstring(f.refs.l1_pocs[i]);
+      }
+      right += tr(L"   DPB ", L"   DPB ") + std::to_wstring(f.refs.dpb_count);
+      if (!f.refs.missing_pocs.empty())
+        right += tr(L"   missing ", L"   缺失 ") +
+                 std::to_wstring(f.refs.missing_pocs.size());
+    }
     SyntaxTree::Selection sel = g_app.syntax_tree.selection();
     if (sel.nal < g_app.stream.nals().size()) {
       const NalEntry& nal = g_app.stream.nals()[sel.nal];
@@ -652,10 +669,13 @@ void layout(HWND hwnd) {
     int vh = std::max(0, static_cast<int>(display.bottom - display.top));
     MoveWindow(g_app.hex_view.hwnd(), vx, vy, vw, vh, TRUE);
     MoveWindow(g_app.video_view.hwnd(), vx, vy, vw, vh, TRUE);
+    MoveWindow(g_app.refs_view.hwnd(), vx, vy, vw, vh, TRUE);
     ShowWindow(g_app.hex_view.hwnd(),
                g_app.active_tab == 0 ? SW_SHOW : SW_HIDE);
     ShowWindow(g_app.video_view.hwnd(),
                g_app.active_tab == 1 ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_app.refs_view.hwnd(),
+               g_app.active_tab == 2 ? SW_SHOW : SW_HIDE);
   }
   MoveWindow(g_app.thumbnails.hwnd(), pad, thumb_top,
              std::max(0, static_cast<int>(rc.right) - 2 * pad), thumb_h, TRUE);
@@ -698,6 +718,7 @@ void resetUi() {
   g_app.frame_list.setStream(nullptr);
   g_app.chart.setStream(nullptr);
   g_app.thumbnails.setStream(nullptr);
+  g_app.refs_view.clear();
   g_app.syntax_tree.clear();
   g_app.hex_view.clear();
 #ifdef BS_HAVE_FFMPEG
@@ -928,8 +949,11 @@ void applyLanguage(HWND hwnd) {
     TabCtrl_SetItem(g_app.tabs, 0, &item);
     item.pszText = const_cast<wchar_t*>(tr(L"Video", L"画面"));
     TabCtrl_SetItem(g_app.tabs, 1, &item);
+    item.pszText = const_cast<wchar_t*>(tr(L"Refs", L"参考帧"));
+    TabCtrl_SetItem(g_app.tabs, 2, &item);
   }
   g_app.frame_list.updateHeaders();
+  g_app.refs_view.updateHeaders();
 
   if (g_app.loaded)
     SetWindowTextW(g_app.info, streamInfoText().c_str());
@@ -959,6 +983,7 @@ void onFrameSelected(int index) {
   g_app.syntax_tree.setFrame(&g_app.stream, index);
   g_app.chart.setSelected(index);
   g_app.thumbnails.setSelected(index);
+  g_app.refs_view.setFrame(&g_app.stream, index);
   EnableWindow(g_app.btn_prev, index > 0);
   EnableWindow(g_app.btn_next,
                index < static_cast<int>(g_app.stream.frames().size()) - 1);
@@ -1098,6 +1123,7 @@ void openFile(const std::wstring& path) {
   g_app.frame_list.refresh();
   g_app.chart.setStream(&g_app.stream);
   g_app.thumbnails.setStream(&g_app.stream);
+  g_app.refs_view.clear();
   g_app.syntax_tree.clear();
   g_app.hex_view.clear();
   g_app.video_view.clear(tr(L"Select a frame to decode", L"选择一帧进行解码"));
@@ -1313,9 +1339,12 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
       TabCtrl_InsertItem(g_app.tabs, 0, &tab_item);
       tab_item.pszText = const_cast<wchar_t*>(tr(L"Video", L"画面"));
       TabCtrl_InsertItem(g_app.tabs, 1, &tab_item);
+      tab_item.pszText = const_cast<wchar_t*>(tr(L"Refs", L"参考帧"));
+      TabCtrl_InsertItem(g_app.tabs, 2, &tab_item);
       g_app.active_tab = 1;
       TabCtrl_SetCurSel(g_app.tabs, g_app.active_tab);
       g_app.video_view.create(hwnd, g_app.inst, IDC_VIDEO_VIEW);
+      g_app.refs_view.create(hwnd, g_app.inst, IDC_REFS_VIEW);
       g_app.chart.create(hwnd, g_app.inst, IDC_CHART);
       g_app.thumbnails.create(hwnd, g_app.inst, IDC_THUMBNAILS);
       g_app.thumbnails.setRequestHandler(requestThumbnail);
@@ -1537,6 +1566,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     }
 
     case WM_APP_THUMBNAIL_SELECTED:
+    case WM_APP_REF_SELECTED:
       selectFrame(static_cast<int>(wparam));
       return 0;
 

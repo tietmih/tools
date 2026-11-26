@@ -115,6 +115,17 @@ struct H264Pps {
   bool valid = false;
 };
 
+struct H264RefMod {
+  int idc = 0;
+  int arg = 0;
+};
+
+struct H264Mmco {
+  int op = 0;
+  int arg1 = 0;
+  int arg2 = 0;
+};
+
 struct H264SliceInfo {
   bool valid = false;
   int first_mb_in_slice = 0;
@@ -139,6 +150,13 @@ struct H264SliceInfo {
   int cabac_init_idc = 0;
   int num_ref_idx_l0_active_minus1 = 0;
   int num_ref_idx_l1_active_minus1 = 0;
+  bool ref_pic_list_modification_flag_l0 = false;
+  bool ref_pic_list_modification_flag_l1 = false;
+  std::vector<H264RefMod> ref_mod_l0;
+  std::vector<H264RefMod> ref_mod_l1;
+  bool adaptive_ref_pic_marking = false;
+  bool long_term_reference_flag = false;
+  std::vector<H264Mmco> mmco;
   int disable_deblocking_filter_idc = 0;
   int slice_alpha_c0_offset_div2 = 0;
   int slice_beta_offset_div2 = 0;

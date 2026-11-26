@@ -166,6 +166,12 @@ struct H265SliceInfo {
   int temporal_id_plus1 = 1;
   bool irap = false;
   bool idr = false;
+  H265Rps short_term_rps;
+  std::vector<int> lt_poc_lsb;
+  std::vector<uint8_t> lt_used;
+  std::vector<uint8_t> lt_msb_present;
+  std::vector<uint32_t> lt_delta_msb_cycle;
+  int num_pic_total_curr = 0;
   uint64_t header_bits = 0;
 };
 

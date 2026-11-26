@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
   if (argc < 2) {
     std::fprintf(stderr,
                  "usage: bsinfo <file.h264|file.h265> [--frames] [--tree "
-                 "<nal-index>] [--cpb] [--csv-cpb <path>]\n");
+                 "<nal-index>] [--cpb] [--refs] [--csv-cpb <path>]\n");
     return 2;
   }
   Stream s;
@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
 
   bool showFrames = false;
   bool showCpb = false;
+  bool showRefs = false;
   long treeIndex = -1;
   const char* csvFrames = nullptr;
   const char* csvNals = nullptr;
@@ -52,6 +53,8 @@ int main(int argc, char** argv) {
       csvNals = argv[++i];
     else if (std::strcmp(argv[i], "--cpb") == 0)
       showCpb = true;
+    else if (std::strcmp(argv[i], "--refs") == 0)
+      showRefs = true;
     else if (std::strcmp(argv[i], "--csv-cpb") == 0 && i + 1 < argc)
       csvCpb = argv[++i];
   }
@@ -72,6 +75,22 @@ int main(int argc, char** argv) {
   if (csvFrames) writeCsv(csvFrames, s.framesCsv());
   if (csvNals) writeCsv(csvNals, s.nalsCsv());
   if (csvCpb) writeCsv(csvCpb, s.cpbCsv());
+
+  if (showRefs) {
+    for (const auto& f : s.frames()) {
+      std::printf("refs %d %c poc=%d dpb=%d l0=", f.index, f.picture_type,
+                  f.poc, f.refs.dpb_count);
+      for (size_t i = 0; i < f.refs.l0_pocs.size(); i++)
+        std::printf("%s%d", i ? "," : "", f.refs.l0_pocs[i]);
+      std::printf(" l1=");
+      for (size_t i = 0; i < f.refs.l1_pocs.size(); i++)
+        std::printf("%s%d", i ? "," : "", f.refs.l1_pocs[i]);
+      std::printf(" missing=");
+      for (size_t i = 0; i < f.refs.missing_pocs.size(); i++)
+        std::printf("%s%d", i ? "," : "", f.refs.missing_pocs[i]);
+      std::printf("\n");
+    }
+  }
 
   if (showCpb) {
     const CpbModelResult& cpb = s.cpbModel();
