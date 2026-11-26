@@ -15,6 +15,7 @@
 #include "core/conformance.h"
 #include "core/stream.h"
 #include "ui/chart_view.h"
+#include "ui/compare_window.h"
 #include "ui/frame_list.h"
 #include "ui/hex_view.h"
 #include "ui/image_export.h"
@@ -56,6 +57,7 @@ enum : int {
   IDM_FILE_EXPORT_CPB = 2005,
   IDM_FILE_EXPORT_IMAGE = 2006,
   IDM_FILE_EXPORT_YUV = 2007,
+  IDM_FILE_COMPARE = 2010,
   IDM_VIEW_PREV = 2101,
   IDM_VIEW_NEXT = 2102,
   IDM_VIEW_RELOAD = 2103,
@@ -394,6 +396,9 @@ void createMenu(HWND hwnd) {
       tr(L"Export Frame &Image (PNG/BMP)...", L"导出当前画面 PNG/BMP(&I)..."));
   AppendMenuW(file, MF_STRING, IDM_FILE_EXPORT_YUV,
               tr(L"Export Frame &YUV...", L"导出当前帧 YUV(&Y)..."));
+  AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(file, MF_STRING, IDM_FILE_COMPARE,
+              tr(L"&Compare Streams...", L"码流对比(&C)..."));
   AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(file, MF_STRING, IDM_FILE_EXIT, tr(L"E&xit", L"退出(&X)"));
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file),
@@ -1168,6 +1173,28 @@ void openFile(const std::wstring& path) {
   updateStatus();
 }
 
+void openCompare(HWND hwnd) {
+  auto pick = [&](const wchar_t* title, std::wstring& path) {
+    wchar_t file[32768] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = filterForLanguage();
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = 32768;
+    ofn.lpstrTitle = title;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER;
+    if (!GetOpenFileNameW(&ofn)) return false;
+    path = file;
+    return true;
+  };
+  std::wstring first;
+  std::wstring second;
+  if (!pick(tr(L"Select the first stream", L"选择第一条码流"), first)) return;
+  if (!pick(tr(L"Select the second stream", L"选择第二条码流"), second)) return;
+  CompareWindow::open(hwnd, g_app.inst, first, second);
+}
+
 void openDialog(HWND hwnd) {
   wchar_t file[32768] = {};
   OPENFILENAMEW ofn = {};
@@ -1452,6 +1479,9 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
           return 0;
         case IDM_FILE_EXPORT_YUV:
           exportYuv();
+          return 0;
+        case IDM_FILE_COMPARE:
+          openCompare(hwnd);
           return 0;
         case IDM_VIEW_MATRIX_AUTO:
           g_app.preview_matrix = -1;

@@ -128,6 +128,7 @@ if(WIN32)
         src/ui/hex_view.cpp
         src/ui/video_view.cpp
         src/ui/chart_view.cpp
+        src/ui/compare_window.cpp
         src/ui/image_export.cpp
         src/ui/lang.cpp
         src/ui/ui_util.cpp
