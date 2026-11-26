@@ -195,7 +195,7 @@ struct State {
     OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hwnd;
-    ofn.lpstrFilter = tr(L"Raw YUV (*.yuv)\\0*.yuv\\0All files (*.*)\\0*.*\\0",
+    ofn.lpstrFilter = tr(L"Raw YUV (*.yuv)\0*.yuv\0All files (*.*)\0*.*\0",
                          L"原始 YUV (*.yuv)\\0*.yuv\\0所有文件 (*.*)\\0*.*\\0");
     ofn.lpstrFile = file;
     ofn.nMaxFile = 32768;
@@ -225,7 +225,10 @@ struct State {
       return;
     }
     path = file;
+    yuv_b.close();
+    path_b.clear();
     frame = 0;
+    SendMessageW(hwnd, WM_SIZE, 0, 0);
     renderFrame();
   }
 };
