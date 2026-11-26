@@ -217,6 +217,12 @@ bsinfo stream.h264 --json             # 机器可读输出
 bsinfo --batch vectors/               # 目录的 JSON 数组
 ```
 
+`yuvcmp` 比较两个 raw planar YUV 文件：
+
+```bash
+yuvcmp a.yuv b.yuv --format i420 --width 1920 --height 1080 --csv diff.csv
+```
+
 `mtest` 用于验证容器解封装/解码链路：
 
 ```bash
@@ -251,6 +257,7 @@ mtest stream.h264 --ref ref.yuv --quality  # 逐帧 PSNR/SSIM
 | 合规检查 | 合成的超 level SPS 被标记；合法 H.265 向量无问题 |
 | 质量 GUI | 参考 YUV 加载、PSNR/SSIM/MSE/MSAD、质量图表/差异视图和 CSV 导出 |
 | 并排对比 | 显示顺序/POC/时间同步，以及相减/温度图/PSNR 裁剪/分割视图和 PSNR/SSIM |
+| YUV 对比 CLI | `yuvcmp` 对两个 raw YUV 文件输出逐帧 PSNR/SSIM/MSE/MSAD |
 | 缩略图条和 GOP 导航 | Windows 冒烟测试检查窗口创建；缩略图加载为手动验证 |
 | Windows 安装器：默认安装、自定义 `/D=`、`/LANG=2052`、从 0.3.0 升级、静默卸载 | 文件、快捷方式、HKCU 卸载项、版本交接和清理均验证 |
 | 运行时中英文切换及重启后保持 | 自动化/截图验证 |

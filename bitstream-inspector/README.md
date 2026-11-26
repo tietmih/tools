@@ -239,6 +239,12 @@ bsinfo stream.h264 --json             # machine-readable output
 bsinfo --batch vectors/               # JSON array for a directory
 ```
 
+`yuvcmp` compares two raw planar YUV files:
+
+```bash
+yuvcmp a.yuv b.yuv --format i420 --width 1920 --height 1080 --csv diff.csv
+```
+
 `mtest` exercises the container/demux/decode path:
 
 ```bash
@@ -273,6 +279,7 @@ below are automated in `tests/` and run by CI on every push:
 | Conformance checks | out-of-level synthetic SPS flagged; valid H.265 vector clean |
 | Quality GUI | reference YUV loading, PSNR/SSIM/MSE/MSAD, quality chart/difference view and CSV export |
 | Side-by-side compare | display-order/POC/time sync and subtraction/temperature/PSNR-clip/split views with PSNR/SSIM |
+| YUV compare CLI | `yuvcmp` reports per-frame PSNR/SSIM/MSE/MSAD for two raw YUV files |
 | Thumbnail strip and GOP navigation | window creation checked by the Windows smoke test; thumbnail loading is manual |
 | Windows installer: default, custom `/D=`, `/LANG=2052`, upgrade from 0.3.0, silent uninstall | files, shortcuts, HKCU entry, version hand-off and clean removal verified |
 | Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |
