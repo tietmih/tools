@@ -79,8 +79,8 @@ packaging step below (the binaries are build artifacts and are not checked into
 git):
 
 ```text
-dist/BitstreamInspector-0.3.1-win64-setup.exe
-dist/BitstreamInspector-0.3.1-win64-portable.zip
+dist/BitstreamInspector-0.4.0-win64-setup.exe
+dist/BitstreamInspector-0.4.0-win64-portable.zip
 ```
 
 The installer is per-user and needs no administrator rights or UAC prompt:
@@ -99,7 +99,7 @@ custom install directory).
 ## Releases
 
 The tool is released independently from the rest of the repository. The current
-version is **0.3.1**; tags use the form `bitstream-inspector-v0.3.1` and every
+version is **0.4.0**; tags use the form `bitstream-inspector-v0.4.0` and every
 tag has a matching GitHub Release with the Windows installer, portable ZIP,
 CycloneDX SBOM and `SHA256SUMS` attached. Releases are built, tested and published by the CI
 workflow. Release notes are provided in English and Simplified Chinese.

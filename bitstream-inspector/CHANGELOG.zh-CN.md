@@ -5,6 +5,47 @@
 记录 Bitstream Inspector 的重要变更。本工具独立于仓库中其他工具进行版本管理和
 发布，tag 格式为 `bitstream-inspector-v<version>`。
 
+## [0.4.0] - 2026-11-26
+
+### 新增
+
+- H.264/H.265 SEI 解析：MDCV、CLL、ATC、recovery point、T.35 用户数据和
+  user-data UUID；HDR10/HLG 摘要、修正 payload 名称、H.265 prefix/suffix SEI。
+- H.264 VUI 与 H.265 VPS/SPS HRD 入库，解析 `buffering_period`/`pic_timing`，
+  实现带 buffering period 锚点的 CPB0 占用模型、underflow/overflow、图表和
+  CSV/CLI 输出。
+- 原生 YUV 平面解码与导出、画面 Y/Cb/Cr/RGB 探针、仅预览生效的
+  BT.601/709/2020 与 limited/full 控制、WIC PNG/BMP 和 raw planar YUV 导出。
+- 懒加载缩略图条、GOP 边界、上一个/下一个 GOP，以及裸流精确帧（含 B 帧）。
+- H.264（MMCO/列表修改）与 H.265（RPS/长期参考）的 DPB/参考列表推导、Refs
+  标签页、缺失参考报告和 `bsinfo --refs`。
+- 参考 YUV 的 PSNR/SSIM 比较（与 ffmpeg psnr/ssim 一致）；
+  `mtest --ref/--quality` 和 CSV 输出。
+- 按 NAL 类别的逐 AU 比特分配、1 秒窗口码率、堆叠图表和 CSV。
+- AVI、FLV、MXF、MPEG-PS 解封装；AVI/FLV/MXF 回归向量。
+- 画面页 slice/CTB/tile 边界叠加。
+- 独立 MPEG-TS 扫描器：188/192/204 字节包、PID/stream type、PCR 抖动、
+  continuity counter 错误和 TEI/scrambling 统计。
+- `bsinfo --json`/`--batch` 及 schema 文档；`mtest --range` YUV 范围导出。
+- H.264/H.265 Annex A 合规检查：图像大小、MB/CTB 速率、DPB 和平均码率。
+- 基础并排 Compare Streams 窗口。
+
+### 修复
+
+- H.265 VPS 现在解析 ordering、layer sets、timing/HRD；NAL/VCL HRD 的 CPB
+  表分别读取。
+- MPEG-PS 按 Annex B 处理；不支持的 MXF 向量不再导致向量生成失败。
+- 裸流从 GOP 起点解码，精确匹配选中帧（含 B 帧）；8/10-bit 原生 YUV 平面与
+  ffmpeg 逐字节一致。
+
+### 已知限制
+
+- GUI 质量曲线/差异视图和 POC/时间绑定对比尚未实现；PSNR/SSIM 和 TS 分析
+  目前以 CLI 为主。
+- H.265 tile 布局已实现，但当前 x265 构建未生成 tile 测试向量；IVF/MPEG-PS
+  只有 demuxer 覆盖。
+- GUI YUV 范围导出只支持当前帧；范围导出请用 `mtest --range`。
+
 ## [0.3.1] - 2026-11-24
 
 ### 新增

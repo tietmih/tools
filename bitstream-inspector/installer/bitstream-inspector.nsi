@@ -8,7 +8,7 @@
 ;   STAGE_DIR    absolute path to the staged files (exe, DLLs, licenses)
 
 !ifndef APP_VERSION
-  !define APP_VERSION "0.3.1"
+  !define APP_VERSION "0.4.0"
 !endif
 !ifndef OUT_FILE
   !define OUT_FILE "..\dist\BitstreamInspector-${APP_VERSION}-win64-setup.exe"

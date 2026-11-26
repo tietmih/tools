@@ -67,8 +67,8 @@ Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表�
 或便携 ZIP，或运行下面的打包步骤（二进制是构建产物，不进 git）：
 
 ```text
-dist/BitstreamInspector-0.3.1-win64-setup.exe
-dist/BitstreamInspector-0.3.1-win64-portable.zip
+dist/BitstreamInspector-0.4.0-win64-setup.exe
+dist/BitstreamInspector-0.4.0-win64-portable.zip
 ```
 
 安装器按用户安装，不需要管理员权限，也不会弹 UAC：
@@ -86,8 +86,8 @@ dist/BitstreamInspector-0.3.1-win64-portable.zip
 
 ## 发布
 
-本工具独立于仓库中的其他工具发布。当前版本 **0.3.1**，tag 格式为
-`bitstream-inspector-v0.3.1`；每个 tag 都有对应的 GitHub Release，附件包含
+本工具独立于仓库中的其他工具发布。当前版本 **0.4.0**，tag 格式为
+`bitstream-inspector-v0.4.0`；每个 tag 都有对应的 GitHub Release，附件包含
 Windows 安装包、便携 ZIP、CycloneDX SBOM 和 `SHA256SUMS`，发布说明提供英文和
 简体中文两个版本。
 发布包由 CI 工作流构建、测试并自动发布。

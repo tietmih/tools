@@ -6,6 +6,54 @@ All notable changes to Bitstream Inspector. The tool is versioned and released
 independently from the rest of the repository. Tags use the form
 `bitstream-inspector-v<version>`.
 
+## [0.4.0] - 2026-11-26
+
+### Added
+
+- H.264/H.265 SEI parsing for MDCV, CLL, ATC, recovery point, T.35 user data
+  and user-data UUIDs, with HDR10/HLG summaries, corrected payload names and
+  H.265 prefix/suffix SEI support.
+- H.264 VUI and H.265 VPS/SPS HRD storage, `buffering_period`/`pic_timing`
+  parsing, a CPB0 occupancy model with buffering-period anchors, underflow and
+  overflow reporting, a chart mode and CSV/CLI output.
+- Native YUV plane decoding and export, a video Y/Cb/Cr/RGB pixel probe,
+  preview-only BT.601/709/2020 and limited/full controls, WIC PNG/BMP export
+  and raw planar YUV export.
+- Lazy thumbnail strip with GOP boundaries, previous/next GOP navigation and
+  exact raw-ES frame display, including B pictures.
+- DPB/reference-list derivation for H.264 (MMCO/list modification) and H.265
+  (RPS/long-term), a Refs tab, missing-reference reporting and `bsinfo --refs`.
+- PSNR/SSIM comparison against a reference YUV, matching ffmpeg psnr/ssim;
+  `mtest --ref/--quality` and CSV output.
+- Per-AU bit allocation by NAL category, one-second window bitrate, stacked
+  chart and CSV output.
+- AVI, FLV, MXF and MPEG-PS demuxer support; AVI/FLV/MXF regression vectors.
+- Slice/CTB/tile boundary overlay on the video tab.
+- Standalone MPEG-TS scanner for 188/192/204-byte packets, PID/stream type,
+  PCR jitter, continuity-counter errors and TEI/scrambling counters.
+- `bsinfo --json` and `--batch` with a documented schema, plus `mtest --range`
+  YUV export.
+- H.264/H.265 Annex A conformance checks for picture size, MB/CTB rate, DPB
+  and average bitrate.
+- A basic side-by-side Compare Streams window.
+
+### Fixed
+
+- H.265 VPS parsing now covers ordering, layer sets and timing/HRD; NAL and VCL
+  HRD CPB tables are read separately.
+- MPEG-PS is treated as Annex B, and unsupported MXF vectors no longer fail
+  vector generation.
+- Raw ES decoding starts at the GOP and matches the selected frame, including
+  B pictures; native YUV planes are byte-identical to ffmpeg for 8/10-bit.
+
+### Known limitations
+
+- The GUI quality chart/difference view and POC/time-bound comparison modes are
+  not implemented; PSNR/SSIM and TS analysis are CLI-first.
+- H.265 tile layout is implemented but the local x265 build did not produce a
+  tile test vector; IVF/MPEG-PS are demuxer-only coverage.
+- GUI YUV range export is current-frame only; use `mtest --range` for ranges.
+
 ## [0.3.1] - 2026-11-24
 
 ### Added

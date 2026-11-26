@@ -156,7 +156,7 @@ notes must match.
 
 | Tool | Version | Tag / Release |
 |---|---|---|
-| bitstream-inspector | 0.3.1 | [`bitstream-inspector-v0.3.1`](https://github.com/tietmih/tools/releases/tag/bitstream-inspector-v0.3.1) |
+| bitstream-inspector | 0.4.0 | [`bitstream-inspector-v0.4.0`](https://github.com/tietmih/tools/releases/tag/bitstream-inspector-v0.4.0) |
 
 ## Building
 
