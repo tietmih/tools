@@ -253,6 +253,7 @@ mtest movie.mp4                       # container info, packet map, frame timing
 mtest movie.mkv --frame 10 --ppm out.ppm
 mtest stream.h264 --frame 5 --yuv frame.yuv   # native planar YUV
 mtest stream.h264 --range 0:30 --yuv range.yuv  # YUV frame range
+mtest in.h264 --frame 10 --yuv frame.yuv --yuv-format i420  # format conversion
 mtest capture.ts --ts                 # MPEG-TS PID/PCR/continuity scan
 mtest stream.h264 --ref ref.yuv --quality  # per-frame PSNR/SSIM
 ```

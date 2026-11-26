@@ -62,6 +62,8 @@ if [ -x "$BUILD/mtest" ]; then
         --ffmpeg "$FFMPEG" --vectors "$VECTORS"
     python3 "$ROOT/tests/check_yuvcmp.py" --yuvcmp "$BUILD/yuvcmp" \
         --ffmpeg "$FFMPEG" --vectors "$VECTORS"
+    python3 "$ROOT/tests/check_yuv_convert.py" --mtest "$BUILD/mtest" \
+        --yuvcmp "$BUILD/yuvcmp" --ffmpeg "$FFMPEG" --vectors "$VECTORS"
 else
     echo "mtest not built (media layer disabled); decode checks skipped"
 fi

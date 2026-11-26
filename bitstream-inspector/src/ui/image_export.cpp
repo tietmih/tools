@@ -100,13 +100,8 @@ bool writeRawYuv(const std::wstring& path, const ImageData& image,
     error = "no decoded YUV planes";
     return false;
   }
-  int shift = 0;
-  if (image.layout == bs::YuvLayout::P010 ||
-      image.layout == bs::YuvLayout::P210)
-    shift = 6;
-  else if (image.layout == bs::YuvLayout::P012 ||
-           image.layout == bs::YuvLayout::P212)
-    shift = 4;
+  // Raw >8-bit YUV is written little-endian with the sample in the low bits,
+  // matching ffmpeg rawvideo and the reference YUV reader.
   const bool wide = image.bit_depth > 8;
   FILE* out = _wfopen(path.c_str(), L"wb");
   if (!out) {
@@ -119,14 +114,8 @@ bool writeRawYuv(const std::wstring& path, const ImageData& image,
       if (std::fwrite(plane.data(), 1, plane.size(), out) != plane.size())
         ok = false;
     } else {
-      for (size_t i = 0; i + 1 < plane.size() && ok; i += 2) {
-        uint16_t value = static_cast<uint16_t>(plane[i] | (plane[i + 1] << 8));
-        value = static_cast<uint16_t>(value << shift);
-        const unsigned char bytes[2] = {
-            static_cast<unsigned char>(value & 0xFF),
-            static_cast<unsigned char>(value >> 8)};
-        if (std::fwrite(bytes, 1, 2, out) != 2) ok = false;
-      }
+      if (std::fwrite(plane.data(), 1, plane.size(), out) != plane.size())
+        ok = false;
     }
     if (!ok) break;
   }
@@ -136,6 +125,19 @@ bool writeRawYuv(const std::wstring& path, const ImageData& image,
     return false;
   }
   return true;
+}
+
+bool writeBinaryFile(const std::wstring& path, const std::vector<uint8_t>& data,
+                     std::string& error) {
+  FILE* out = _wfopen(path.c_str(), L"wb");
+  if (!out) {
+    error = "cannot open the output file";
+    return false;
+  }
+  const bool ok = std::fwrite(data.data(), 1, data.size(), out) == data.size();
+  std::fclose(out);
+  if (!ok) error = "cannot write the output file";
+  return ok;
 }
 
 }  // namespace ui

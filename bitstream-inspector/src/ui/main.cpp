@@ -31,6 +31,7 @@
 #include "ui/yuv_viewer.h"
 #ifdef BS_HAVE_FFMPEG
 #include "media/media_file.h"
+#include "media/yuv_convert.h"
 #endif
 
 using namespace bs;
@@ -60,7 +61,12 @@ enum : int {
   IDM_FILE_EXPORT_NALS = 2004,
   IDM_FILE_EXPORT_CPB = 2005,
   IDM_FILE_EXPORT_IMAGE = 2006,
-  IDM_FILE_EXPORT_YUV = 2007,
+  IDM_FILE_EXPORT_YUV = 2007,  // native layout
+  IDM_FILE_EXPORT_YUV_I420 = 2129,
+  IDM_FILE_EXPORT_YUV_I422 = 2130,
+  IDM_FILE_EXPORT_YUV_I444 = 2131,
+  IDM_FILE_EXPORT_YUV_P010 = 2132,
+  IDM_FILE_EXPORT_YUV_P210 = 2133,
   IDM_FILE_COMPARE = 2010,
   IDM_FILE_REFERENCE = 2011,
   IDM_FILE_EXPORT_QUALITY = 2012,
@@ -1565,7 +1571,7 @@ void exportImage() {
               tr(L"Export complete", L"导出完成"), MB_OK | MB_ICONINFORMATION);
 }
 
-void exportYuv() {
+void exportYuv(bs::YuvLayout target = bs::YuvLayout::None) {
   const ImageData& image = g_app.video_view.image();
   if (image.planes.empty()) {
     MessageBoxW(g_app.hwnd,
@@ -1589,7 +1595,36 @@ void exportYuv() {
   ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_EXPLORER;
   if (!GetSaveFileNameW(&ofn)) return;
   std::string error;
-  if (!writeRawYuv(file, image, error)) {
+#ifdef BS_HAVE_FFMPEG
+  if (target != bs::YuvLayout::None) {
+    bs::YuvFrameView view;
+    view.bit_depth = image.bit_depth;
+    view.chroma_format = image.chroma_format;
+    for (int p = 0; p < 3; p++) {
+      const int pw = p == 0
+                         ? image.width
+                         : (image.chroma_format == 3 ? image.width
+                                                     : (image.width + 1) / 2);
+      const int ph = p == 0 ? image.height
+                            : (image.chroma_format == 1 ? (image.height + 1) / 2
+                                                        : image.height);
+      view.planes[p] = {image.planes[static_cast<size_t>(p)].data(),
+                        image.strides[static_cast<size_t>(p)], pw, ph};
+    }
+    std::vector<uint8_t> converted;
+    if (!bs::yuvToYuv(view, target, converted, error)) {
+      MessageBoxW(g_app.hwnd, wide(error).c_str(),
+                  tr(L"Export failed", L"导出失败"), MB_OK | MB_ICONERROR);
+      return;
+    }
+    if (!writeBinaryFile(file, converted, error)) {
+      MessageBoxW(g_app.hwnd, wide(error).c_str(),
+                  tr(L"Export failed", L"导出失败"), MB_OK | MB_ICONERROR);
+      return;
+    }
+  } else
+#endif
+      if (!writeRawYuv(file, image, error)) {
     MessageBoxW(g_app.hwnd, wide(error).c_str(),
                 tr(L"Export failed", L"导出失败"), MB_OK | MB_ICONERROR);
     return;
@@ -1815,6 +1850,21 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
           return 0;
         case IDM_FILE_EXPORT_YUV:
           exportYuv();
+          return 0;
+        case IDM_FILE_EXPORT_YUV_I420:
+          exportYuv(bs::YuvLayout::I420);
+          return 0;
+        case IDM_FILE_EXPORT_YUV_I422:
+          exportYuv(bs::YuvLayout::I422);
+          return 0;
+        case IDM_FILE_EXPORT_YUV_I444:
+          exportYuv(bs::YuvLayout::I444);
+          return 0;
+        case IDM_FILE_EXPORT_YUV_P010:
+          exportYuv(bs::YuvLayout::P010);
+          return 0;
+        case IDM_FILE_EXPORT_YUV_P210:
+          exportYuv(bs::YuvLayout::P210);
           return 0;
         case IDM_FILE_COMPARE:
           openCompare(hwnd);

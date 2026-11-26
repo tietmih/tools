@@ -11,6 +11,7 @@
 #include "core/stream.h"
 #include "core/ts.h"
 #include "media/media_file.h"
+#include "media/yuv_convert.h"
 
 using namespace bs;
 
@@ -21,6 +22,54 @@ static bool writeYuvPlanes(FILE* f, const DecodedFrame& frame) {
       ok = false;
   }
   return ok;
+}
+
+static bool targetLayout(const char* name, YuvLayout& layout) {
+  const std::string format = name ? name : "";
+  if (format == "i420" || format == "yuv420p")
+    layout = YuvLayout::I420;
+  else if (format == "i422" || format == "yuv422p")
+    layout = YuvLayout::I422;
+  else if (format == "i444" || format == "yuv444p")
+    layout = YuvLayout::I444;
+  else if (format == "p010" || format == "yuv420p10le")
+    layout = YuvLayout::P010;
+  else if (format == "p210" || format == "yuv422p10le")
+    layout = YuvLayout::P210;
+  else if (format == "p012" || format == "yuv420p12le")
+    layout = YuvLayout::P012;
+  else if (format == "p212" || format == "yuv422p12le")
+    layout = YuvLayout::P212;
+  else
+    return false;
+  return true;
+}
+
+static bool writeConvertedYuv(FILE* f, const DecodedFrame& frame,
+                              YuvLayout target) {
+  YuvFrameView view;
+  view.bit_depth = frame.bit_depth;
+  view.chroma_format = frame.chroma_format;
+  for (int p = 0; p < 3; p++) {
+    view.planes[p] = {
+        frame.planes[static_cast<size_t>(p)].data(),
+        frame.strides[static_cast<size_t>(p)],
+        p == 0 ? frame.width
+               : (frame.chroma_format == 1
+                      ? (frame.width + 1) / 2
+                      : (frame.chroma_format == 2 ? (frame.width + 1) / 2
+                                                  : frame.width)),
+        p == 0 ? frame.height
+               : (frame.chroma_format == 1 ? (frame.height + 1) / 2
+                                           : frame.height)};
+  }
+  std::vector<uint8_t> out;
+  std::string error;
+  if (!yuvToYuv(view, target, out, error)) {
+    std::fprintf(stderr, "yuv conversion failed: %s\n", error.c_str());
+    return false;
+  }
+  return std::fwrite(out.data(), 1, out.size(), f) == out.size();
 }
 
 static bool writeYuv(const char* path, const DecodedFrame& frame) {
@@ -53,7 +102,7 @@ int main(int argc, char** argv) {
                  "usage: mtest <file> [--frame N] [--ppm out.ppm] "
                  "[--yuv out.yuv] [--range start:end] [--ts] "
                  "[--ref ref.yuv] [--ref-format fmt] [--quality] "
-                 "[--quality-csv out.csv]\n");
+                 "[--quality-csv out.csv] [--yuv-format fmt]\n");
     return 2;
   }
   for (int i = 2; i < argc; i++) {
@@ -121,6 +170,7 @@ int main(int argc, char** argv) {
   const char* ref_path = nullptr;
   const char* ref_format = "yuv420p";
   const char* quality_csv = nullptr;
+  const char* yuv_format = nullptr;
   bool quality = false;
   for (int i = 2; i < argc; i++) {
     if (std::strcmp(argv[i], "--frame") == 0 && i + 1 < argc)
@@ -139,6 +189,8 @@ int main(int argc, char** argv) {
       quality = true;
     else if (std::strcmp(argv[i], "--quality-csv") == 0 && i + 1 < argc)
       quality_csv = argv[++i];
+    else if (std::strcmp(argv[i], "--yuv-format") == 0 && i + 1 < argc)
+      yuv_format = argv[++i];
   }
   if (quality && ref_path) {
     int chroma = 1;
@@ -286,6 +338,11 @@ int main(int argc, char** argv) {
   }
 
   if (range && yuv_path) {
+    YuvLayout target = YuvLayout::None;
+    if (yuv_format && !targetLayout(yuv_format, target)) {
+      std::fprintf(stderr, "unsupported --yuv-format %s\n", yuv_format);
+      return 2;
+    }
     int first = 0, last = 0;
     if (std::sscanf(range, "%d:%d", &first, &last) != 2 || first < 0 ||
         last < first) {
@@ -303,7 +360,11 @@ int main(int argc, char** argv) {
       bool keyframe_only = false;
       if (!media.decodeFrameAt(stream, index, frame, keyframe_only, error))
         break;
-      if (!writeYuvPlanes(out, frame)) break;
+      if (target != YuvLayout::None) {
+        if (!writeConvertedYuv(out, frame, target)) break;
+      } else if (!writeYuvPlanes(out, frame)) {
+        break;
+      }
       written++;
     }
     std::fclose(out);
@@ -336,7 +397,20 @@ int main(int argc, char** argv) {
       std::printf("wrote %s\n", ppm_path);
     }
     if (yuv_path) {
-      if (!writeYuv(yuv_path, frame)) {
+      YuvLayout target = YuvLayout::None;
+      if (yuv_format && !targetLayout(yuv_format, target)) {
+        std::fprintf(stderr, "unsupported --yuv-format %s\n", yuv_format);
+        return 2;
+      }
+      bool ok = false;
+      if (target != YuvLayout::None) {
+        FILE* out = std::fopen(yuv_path, "wb");
+        ok = out && writeConvertedYuv(out, frame, target);
+        if (out) std::fclose(out);
+      } else {
+        ok = writeYuv(yuv_path, frame);
+      }
+      if (!ok) {
         std::fprintf(stderr, "cannot write %s\n", yuv_path);
         return 1;
       }
