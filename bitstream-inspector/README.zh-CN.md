@@ -48,6 +48,8 @@ Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表�
   点击跳帧。
 - **参考帧**：Refs 标签页列出当前帧的 L0/L1 POC、DPB 数量和缺失参考；双击参考
   帧可跳转。
+- **合规检查**：View 菜单按信令的 H.264/H.265 level 检查图像大小、MB/CTB 速率、
+  DPB 和平均码率。
 - **叠加**：画面页可切换 slice/CTB 边界叠加；H.265 tile 边界来自 PPS 布局。
 - **缩略图**：懒加载、带缓存的缩略图条，标出 GOP 边界；支持上一个/下一个 GOP。
 - **导航**：上一帧/下一帧、上一个/下一个关键帧、上一个/下一个 GOP、键盘
@@ -199,6 +201,7 @@ bsinfo stream.h264 --tree 4           # NAL 4 的语法树
 bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
 bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB 占用模型
 bsinfo stream.h264 --bits --csv-bits b.csv  # 逐 AU 比特分配
+bsinfo stream.h264 --conformance       # Annex A 限制检查
 bsinfo stream.h264 --json             # 机器可读输出
 bsinfo --batch vectors/               # 目录的 JSON 数组
 ```
@@ -234,6 +237,7 @@ mtest stream.h264 --ref ref.yuv --quality  # 逐帧 PSNR/SSIM
 | Slice/tile 叠加 | 多 slice H.264 几何已检查；当前编码器无法生成 H.265 tile 向量 |
 | MPEG-TS 扫描 | 188/192/204 字节包、PID/stream type、PCR 样本和注入的 CC 错误均可检测 |
 | PSNR/SSIM | 逐帧值和汇总与 ffmpeg psnr/ssim 在舍入范围内一致 |
+| 合规检查 | 合成的超 level SPS 被标记；合法 H.265 向量无问题 |
 | 缩略图条和 GOP 导航 | Windows 冒烟测试检查窗口创建；缩略图加载为手动验证 |
 | Windows 安装器：默认安装、自定义 `/D=`、`/LANG=2052`、从 0.3.0 升级、静默卸载 | 文件、快捷方式、HKCU 卸载项、版本交接和清理均验证 |
 | 运行时中英文切换及重启后保持 | 自动化/截图验证 |

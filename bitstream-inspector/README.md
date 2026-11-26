@@ -54,6 +54,8 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
   or CPB0 occupancy. Click to jump.
 - **References**: a Refs tab lists the selected frame's L0/L1 POCs, DPB count
   and missing references; double-clicking a reference jumps to that frame.
+- **Conformance**: a View menu report checks picture size, MB/CTB rate, DPB
+  and average bitrate against the signalled H.264/H.265 level.
 - **Overlays**: an optional slice/CTB boundary overlay on the video tab; H.265
   tile boundaries come from the PPS layout.
 - **Thumbnails**: lazy, cached thumbnail strip with GOP boundaries; prev/next
@@ -216,6 +218,7 @@ bsinfo stream.h264 --tree 4           # syntax tree of NAL 4
 bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
 bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB occupancy model
 bsinfo stream.h264 --bits --csv-bits b.csv  # per-AU bit allocation
+bsinfo stream.h264 --conformance       # Annex A limit checks
 bsinfo stream.h264 --json             # machine-readable output
 bsinfo --batch vectors/               # JSON array for a directory
 ```
@@ -251,6 +254,7 @@ below are automated in `tests/` and run by CI on every push:
 | Slice/tile overlay | multi-slice H.264 geometry checked; H.265 tile vector unavailable in the installed encoder |
 | MPEG-TS scan | 188/192/204-byte packets, PID/stream type, PCR samples and injected CC errors detected |
 | PSNR/SSIM | per-frame values and summaries match ffmpeg psnr/ssim within rounding |
+| Conformance checks | out-of-level synthetic SPS flagged; valid H.265 vector clean |
 | Thumbnail strip and GOP navigation | window creation checked by the Windows smoke test; thumbnail loading is manual |
 | Windows installer: default, custom `/D=`, `/LANG=2052`, upgrade from 0.3.0, silent uninstall | files, shortcuts, HKCU entry, version hand-off and clean removal verified |
 | Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |

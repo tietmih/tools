@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <string>
 
+#include "core/conformance.h"
 #include "core/stream.h"
 
 using namespace bs;
@@ -169,7 +170,7 @@ int main(int argc, char** argv) {
                  "usage: bsinfo <file.h264|file.h265> [--frames] [--tree "
                  "<nal-index>] [--cpb] [--refs] [--json] [--batch <dir>] "
                  "[--csv-cpb <path>] [--bits] [--csv-bits <path>] "
-                 "[--overlay]\n");
+                 "[--overlay] [--conformance]\n");
     return 2;
   }
   Stream s;
@@ -183,6 +184,7 @@ int main(int argc, char** argv) {
   bool showRefs = false;
   bool showBits = false;
   bool showOverlay = false;
+  bool showConformance = false;
   bool json = false;
   long treeIndex = -1;
   const char* csvFrames = nullptr;
@@ -206,6 +208,8 @@ int main(int argc, char** argv) {
       json = true;
     else if (std::strcmp(argv[i], "--overlay") == 0)
       showOverlay = true;
+    else if (std::strcmp(argv[i], "--conformance") == 0)
+      showConformance = true;
     else if (std::strcmp(argv[i], "--bits") == 0)
       showBits = true;
     else if (std::strcmp(argv[i], "--csv-bits") == 0 && i + 1 < argc)
@@ -239,6 +243,21 @@ int main(int argc, char** argv) {
   if (csvNals) writeCsv(csvNals, s.nalsCsv());
   if (csvCpb) writeCsv(csvCpb, s.cpbCsv());
   if (csvBits) writeCsv(csvBits, s.bitAllocationCsv());
+
+  if (showConformance) {
+    const uint64_t bitrate = s.frames().empty()
+                                 ? 0
+                                 : static_cast<uint64_t>(s.windowBitrate(
+                                       0, static_cast<int>(s.frames().size())));
+    std::vector<ConformanceIssue> issues;
+    if (s.codec() == Codec::H264 && s.haveH264Params())
+      issues = checkH264Conformance(s.h264Sps(), s.fps(), bitrate);
+    else if (s.codec() == Codec::H265 && s.haveH265Params())
+      issues = checkH265Conformance(s.h265Sps(), s.fps(), bitrate);
+    std::printf("conformance issues=%zu\n", issues.size());
+    for (const auto& issue : issues)
+      std::printf("%s: %s\n", issue.code.c_str(), issue.message.c_str());
+  }
 
   if (showOverlay) {
     for (const auto& f : s.frames()) {
@@ -315,7 +334,7 @@ int main(int argc, char** argv) {
   }
 
   if (treeIndex < 0 && !showFrames && !showCpb && !showRefs && !showBits &&
-      !showOverlay) {
+      !showOverlay && !showConformance) {
     for (size_t i = 0; i < s.nals().size(); i++) {
       const NalEntry& e = s.nals()[i];
       std::printf("[%4zu] off=%-9zu size=%-7zu type=%-3d %-32s %s%s%s\n", i,

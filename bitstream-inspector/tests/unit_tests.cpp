@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/bitreader.h"
+#include "core/conformance.h"
 #include "core/h264.h"
 #include "core/h265.h"
 #include "core/nal.h"
@@ -689,6 +690,34 @@ void testSeiHrdPayloads() {
   CHECK_EQ(pt_info.pic_timing.dpb_output_delay, 4u);
 }
 
+void testConformance() {
+  bs::H264Sps h264;
+  h264.level_idc = 10;
+  h264.pic_width_in_mbs_minus1 = 39;
+  h264.pic_height_in_map_units_minus1 = 29;
+  h264.frame_mbs_only = true;
+  h264.max_num_ref_frames = 1;
+  auto issues = bs::checkH264Conformance(h264, 25.0, 0);
+  CHECK(!issues.empty());
+
+  h264.level_idc = 31;
+  h264.pic_width_in_mbs_minus1 = 19;
+  h264.pic_height_in_map_units_minus1 = 14;
+  h264.max_num_ref_frames = 4;
+  issues = bs::checkH264Conformance(h264, 25.0, 0);
+  CHECK(issues.empty());
+
+  bs::H265Sps h265;
+  h265.ptl.level_idc = 30;
+  h265.width = 1920;
+  h265.height = 1080;
+  h265.log2_min_cb_minus3 = 0;
+  h265.log2_diff_max_min_cb = 0;
+  h265.max_dec_pic_buffering_minus1 = 3;
+  issues = bs::checkH265Conformance(h265, 25.0, 0);
+  CHECK(!issues.empty());
+}
+
 // The frame struct does not carry dimensions; the SPS does.
 void testStreamDetails() {
   const auto h264 = withStartCode(
@@ -768,6 +797,7 @@ int main() {
   testSeiHdr();
   testHrdCpb();
   testSeiHrdPayloads();
+  testConformance();
   testStreamDetails();
   testMalformedInput();
 

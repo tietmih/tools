@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "core/conformance.h"
 #include "core/stream.h"
 #include "ui/chart_view.h"
 #include "ui/frame_list.h"
@@ -64,6 +65,7 @@ enum : int {
   IDM_VIEW_CHART_CPB = 2107,
   IDM_VIEW_CHART_BITS = 2117,
   IDM_VIEW_OVERLAY = 2118,
+  IDM_VIEW_CONFORMANCE = 2119,
   IDM_VIEW_MATRIX_AUTO = 2108,
   IDM_VIEW_MATRIX_601 = 2109,
   IDM_VIEW_MATRIX_709 = 2110,
@@ -331,6 +333,28 @@ std::wstring streamInfoText() {
   return summary;
 }
 
+void showConformance() {
+  if (!g_app.loaded) return;
+  std::vector<ConformanceIssue> issues;
+  const double rate = g_app.stream.windowBitrate(
+      0, static_cast<int>(g_app.stream.frames().size()));
+  if (g_app.stream.codec() == Codec::H264)
+    issues = checkH264Conformance(g_app.stream.h264Sps(), g_app.stream.fps(),
+                                  static_cast<uint64_t>(rate));
+  else if (g_app.stream.codec() == Codec::H265)
+    issues = checkH265Conformance(g_app.stream.h265Sps(), g_app.stream.fps(),
+                                  static_cast<uint64_t>(rate));
+  std::wstring text;
+  if (issues.empty()) {
+    text = tr(L"No Annex A violations detected.", L"未发现 Annex A 限制违规。");
+  } else {
+    for (const auto& issue : issues)
+      text += wide(issue.code) + L": " + wide(issue.message) + L"\n";
+  }
+  MessageBoxW(g_app.hwnd, text.c_str(), tr(L"Conformance Report", L"合规检查"),
+              MB_OK | (issues.empty() ? MB_ICONINFORMATION : MB_ICONWARNING));
+}
+
 void applyPreviewColour() {
 #ifdef BS_HAVE_FFMPEG
   if (!g_app.media) return;
@@ -401,6 +425,8 @@ void createMenu(HWND hwnd) {
   AppendMenuW(view, MF_STRING | (g_app.show_overlay ? MF_CHECKED : 0),
               IDM_VIEW_OVERLAY,
               tr(L"Slice/&Tile Overlay", L"Slice/Tile 叠加(&T)"));
+  AppendMenuW(view, MF_STRING, IDM_VIEW_CONFORMANCE,
+              tr(L"&Conformance Report...", L"合规检查(&C)..."));
   CheckMenuRadioItem(view, IDM_VIEW_CHART_SIZE, IDM_VIEW_CHART_CPB,
                      IDM_VIEW_CHART_SIZE, MF_BYCOMMAND);
 
@@ -1469,6 +1495,9 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
           return 0;
         case IDM_VIEW_CHART_BITS:
           g_app.chart.setMode(ChartView::ChartMode::Bits);
+          return 0;
+        case IDM_VIEW_CONFORMANCE:
+          showConformance();
           return 0;
         case IDM_VIEW_OVERLAY:
           g_app.show_overlay = !g_app.show_overlay;
