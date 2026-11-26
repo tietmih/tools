@@ -227,6 +227,7 @@ mtest movie.mp4                       # container info, packet map, frame timing
 mtest movie.mkv --frame 10 --ppm out.ppm
 mtest stream.h264 --frame 5 --yuv frame.yuv   # native planar YUV
 mtest stream.h264 --range 0:30 --yuv range.yuv  # YUV frame range
+mtest capture.ts --ts                 # MPEG-TS PID/PCR/continuity scan
 ```
 
 ## Verification status
@@ -247,6 +248,7 @@ below are automated in `tests/` and run by CI on every push:
 | Native YUV export vs ffmpeg rawvideo (8/10-bit) | byte-identical planes |
 | DPB/reference lists | L0/L1 populated on H.264/H.265 B-frame vectors; missing-reference path covered |
 | Slice/tile overlay | multi-slice H.264 geometry checked; H.265 tile vector unavailable in the installed encoder |
+| MPEG-TS scan | 188/192/204-byte packets, PID/stream type, PCR samples and injected CC errors detected |
 | Thumbnail strip and GOP navigation | window creation checked by the Windows smoke test; thumbnail loading is manual |
 | Windows installer: default, custom `/D=`, `/LANG=2052`, upgrade from 0.3.0, silent uninstall | files, shortcuts, HKCU entry, version hand-off and clean removal verified |
 | Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |

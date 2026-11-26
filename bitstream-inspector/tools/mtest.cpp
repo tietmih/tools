@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/stream.h"
+#include "core/ts.h"
 #include "media/media_file.h"
 
 using namespace bs;
@@ -46,9 +47,30 @@ int main(int argc, char** argv) {
   if (argc < 2) {
     std::fprintf(stderr,
                  "usage: mtest <file> [--frame N] [--ppm out.ppm] "
-                 "[--yuv out.yuv] [--range start:end]\n");
+                 "[--yuv out.yuv] [--range start:end] [--ts]\n");
     return 2;
   }
+  for (int i = 2; i < argc; i++) {
+    if (std::strcmp(argv[i], "--ts") != 0) continue;
+    TsReport report;
+    if (!analyzeTsFile(argv[1], report)) {
+      std::fprintf(stderr, "ts analysis failed: %s\n", report.error.c_str());
+      return 1;
+    }
+    std::printf(
+        "ts packet_size=%d packets=%llu pids=%zu continuity_errors=%d "
+        "transport_errors=%d scrambled=%d pcr_count=%d pcr_jitter_us=%.3f\n",
+        report.packet_size, static_cast<unsigned long long>(report.packets),
+        report.pids.size(), report.continuity_errors, report.transport_errors,
+        report.scrambled_packets, report.pcr_count, report.pcr_jitter_us);
+    for (const auto& info : report.pids) {
+      std::printf("pid=%d packets=%llu stream_type=%d pmt=%d referenced=%d\n",
+                  info.pid, static_cast<unsigned long long>(info.packets),
+                  info.stream_type, info.pmt ? 1 : 0, info.referenced ? 1 : 0);
+    }
+    return 0;
+  }
+
   MediaFile media;
   std::string error;
   if (!media.open(argv[1], error)) {

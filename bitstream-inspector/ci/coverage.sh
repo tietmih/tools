@@ -61,6 +61,8 @@ if [ -x "$BUILD/mtest" ]; then
     python3 "$ROOT/tests/check_decode.py" --mtest "$BUILD/mtest" \
         --ffmpeg "$REF_FFMPEG" --ffprobe "$FFPROBE" --vectors "$VECTORS" \
         --expected-out "$VECTORS/expected.json"
+    python3 "$ROOT/tests/check_ts.py" --mtest "$BUILD/mtest" \
+        --vectors "$VECTORS"
 fi
 
 if ! command -v gcovr >/dev/null 2>&1; then

@@ -210,6 +210,7 @@ mtest movie.mp4                       # 容器信息、packet 映射、帧时间
 mtest movie.mkv --frame 10 --ppm out.ppm
 mtest stream.h264 --frame 5 --yuv frame.yuv   # 原生 planar YUV
 mtest stream.h264 --range 0:30 --yuv range.yuv  # YUV 帧范围
+mtest capture.ts --ts                 # MPEG-TS PID/PCR/continuity 扫描
 ```
 
 ## 验证状态
@@ -230,6 +231,7 @@ mtest stream.h264 --range 0:30 --yuv range.yuv  # YUV 帧范围
 | 原生 YUV 导出 vs ffmpeg rawvideo（8/10-bit） | 平面逐字节一致 |
 | DPB/参考帧列表 | H.264/H.265 B 帧向量上 L0/L1 已填充；缺失参考路径已覆盖 |
 | Slice/tile 叠加 | 多 slice H.264 几何已检查；当前编码器无法生成 H.265 tile 向量 |
+| MPEG-TS 扫描 | 188/192/204 字节包、PID/stream type、PCR 样本和注入的 CC 错误均可检测 |
 | 缩略图条和 GOP 导航 | Windows 冒烟测试检查窗口创建；缩略图加载为手动验证 |
 | Windows 安装器：默认安装、自定义 `/D=`、`/LANG=2052`、从 0.3.0 升级、静默卸载 | 文件、快捷方式、HKCU 卸载项、版本交接和清理均验证 |
 | 运行时中英文切换及重启后保持 | 自动化/截图验证 |

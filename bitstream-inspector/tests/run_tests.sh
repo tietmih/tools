@@ -56,6 +56,8 @@ if [ -x "$BUILD/mtest" ]; then
     python3 "$ROOT/tests/check_decode.py" --ffmpeg "$REF_FFMPEG" \
         --ffprobe "$FFPROBE" --mtest "$BUILD/mtest" --vectors "$VECTORS" \
         --expected-out "$VECTORS/expected.json"
+    python3 "$ROOT/tests/check_ts.py" --mtest "$BUILD/mtest" \
+        --vectors "$VECTORS"
 else
     echo "mtest not built (media layer disabled); decode checks skipped"
 fi
