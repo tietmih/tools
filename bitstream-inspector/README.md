@@ -49,7 +49,8 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
 - **Video tab**: decodes the selected frame on a background thread. Exact frame
   for containers and raw elementary streams (decoded from the GOP start).
   Hovering shows Y/Cb/Cr and RGB values; colour matrix and range can be
-  overridden for the preview only.
+  overridden for the preview only, and the video can show Y, Cb or Cr alone
+  (View > Video Component).
 - **Charts**: frame-size bars with a picture-type strip, per-AU bit allocation
   with 1/2/5-second bitrate windows, quality metrics, or CPB0 occupancy. Click
   to jump.

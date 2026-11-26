@@ -49,6 +49,11 @@ void VideoView::setImage(ImageData image, const std::wstring& note) {
   paintNow();
 }
 
+void VideoView::setComponent(int component) {
+  component_ = std::max(0, std::min(3, component));
+  paintNow();
+}
+
 void VideoView::setOverlay(std::vector<bs::OverlayLine> lines) {
   overlay_ = std::move(lines);
   paintNow();
@@ -154,10 +159,53 @@ void VideoView::paintTo(HDC target, const RECT& rc) {
   info.bmiHeader.biBitCount = 32;
   info.bmiHeader.biCompression = BI_RGB;
 
+  std::vector<uint8_t> component;
+  const uint8_t* pixels = image_.bgra.data();
+  if (component_ != 0 && !image_.planes.empty()) {
+    component.resize(static_cast<size_t>(image_.width) * image_.height * 4);
+    const int plane = component_ - 1;
+    const int chroma = image_.chroma_format;
+    const int shift = image_.bit_depth > 8 ? image_.bit_depth - 8 : 0;
+    const int pw = plane == 0
+                       ? image_.width
+                       : (chroma == 3 ? image_.width : (image_.width + 1) / 2);
+    const int ph =
+        plane == 0 ? image_.height
+                   : (chroma == 1 ? (image_.height + 1) / 2 : image_.height);
+    const auto& data = image_.planes[static_cast<size_t>(plane)];
+    const int stride = image_.strides[static_cast<size_t>(plane)];
+    for (int py = 0; py < image_.height; py++) {
+      int cy = plane == 0 ? py : (chroma == 1 ? py / 2 : py);
+      if (cy >= ph) cy = ph - 1;
+      for (int px = 0; px < image_.width; px++) {
+        int cx = plane == 0 ? px : (chroma == 3 ? px : px / 2);
+        if (cx >= pw) cx = pw - 1;
+        uint8_t value = 0;
+        if (image_.bit_depth > 8) {
+          const size_t at =
+              static_cast<size_t>(cy) * stride + static_cast<size_t>(cx) * 2;
+          if (at + 1 < data.size())
+            value =
+                static_cast<uint8_t>((data[at] | (data[at + 1] << 8)) >> shift);
+        } else {
+          const size_t at =
+              static_cast<size_t>(cy) * stride + static_cast<size_t>(cx);
+          if (at < data.size()) value = data[at];
+        }
+        const size_t at = (static_cast<size_t>(py) * image_.width + px) * 4;
+        component[at + 0] = value;
+        component[at + 1] = value;
+        component[at + 2] = value;
+        component[at + 3] = 255;
+      }
+    }
+    pixels = component.data();
+  }
+
   SetStretchBltMode(target, HALFTONE);
   SetBrushOrgEx(target, 0, 0, nullptr);
   StretchDIBits(target, x, y, draw_w, draw_h, 0, 0, image_.width, image_.height,
-                image_.bgra.data(), &info, DIB_RGB_COLORS, SRCCOPY);
+                pixels, &info, DIB_RGB_COLORS, SRCCOPY);
 
   if (!note_.empty()) {
     SelectObject(target, uiFont());

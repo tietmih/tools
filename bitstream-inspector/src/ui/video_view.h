@@ -32,6 +32,9 @@ class VideoView {
   HWND hwnd() const { return hwnd_; }
   void setImage(ImageData image, const std::wstring& note);
   void setOverlay(std::vector<bs::OverlayLine> lines);
+  // 0 = colour, 1 = luma, 2 = Cb, 3 = Cr.
+  void setComponent(int component);
+  int component() const { return component_; }
   void clear(const std::wstring& message = L"");
   void paintNow();
   const ImageData& image() const { return image_; }
@@ -61,6 +64,7 @@ class VideoView {
   RECT image_rect_ = {};
   Probe probe_;
   bool tracking_ = false;
+  int component_ = 0;
   std::vector<bs::OverlayLine> overlay_;
   std::wstring note_;
   std::wstring message_;

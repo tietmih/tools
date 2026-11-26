@@ -80,6 +80,10 @@ enum : int {
   IDM_VIEW_BITWIN_1 = 2122,
   IDM_VIEW_BITWIN_2 = 2123,
   IDM_VIEW_BITWIN_5 = 2124,
+  IDM_VIEW_COMP_COLOUR = 2125,
+  IDM_VIEW_COMP_Y = 2126,
+  IDM_VIEW_COMP_CB = 2127,
+  IDM_VIEW_COMP_CR = 2128,
   IDM_VIEW_MATRIX_AUTO = 2108,
   IDM_VIEW_MATRIX_601 = 2109,
   IDM_VIEW_MATRIX_709 = 2110,
@@ -695,6 +699,16 @@ void createMenu(HWND hwnd) {
                      IDM_VIEW_BITWIN_1, MF_BYCOMMAND);
   AppendMenuW(view, MF_POPUP, reinterpret_cast<UINT_PTR>(bitwin),
               tr(L"Bitrate &Window", L"码率窗口(&W)"));
+  HMENU component = CreatePopupMenu();
+  AppendMenuW(component, MF_STRING, IDM_VIEW_COMP_COLOUR,
+              tr(L"Colour (YUV)", L"彩色（YUV）"));
+  AppendMenuW(component, MF_STRING, IDM_VIEW_COMP_Y, L"Y");
+  AppendMenuW(component, MF_STRING, IDM_VIEW_COMP_CB, L"Cb");
+  AppendMenuW(component, MF_STRING, IDM_VIEW_COMP_CR, L"Cr");
+  CheckMenuRadioItem(component, IDM_VIEW_COMP_COLOUR, IDM_VIEW_COMP_CR,
+                     IDM_VIEW_COMP_COLOUR, MF_BYCOMMAND);
+  AppendMenuW(view, MF_POPUP, reinterpret_cast<UINT_PTR>(component),
+              tr(L"Video &Component", L"视频分量(&C)"));
   AppendMenuW(view, MF_STRING | (g_app.show_overlay ? MF_CHECKED : 0),
               IDM_VIEW_OVERLAY,
               tr(L"Slice/&Tile Overlay", L"Slice/Tile 叠加(&T)"));
@@ -1843,6 +1857,16 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         case IDM_VIEW_CHART_QUALITY:
           g_app.chart.setMode(ChartView::ChartMode::Quality);
           return 0;
+        case IDM_VIEW_COMP_COLOUR:
+        case IDM_VIEW_COMP_Y:
+        case IDM_VIEW_COMP_CB:
+        case IDM_VIEW_COMP_CR: {
+          const int component = LOWORD(wparam) - IDM_VIEW_COMP_COLOUR;
+          g_app.video_view.setComponent(component);
+          CheckMenuRadioItem(GetMenu(hwnd), IDM_VIEW_COMP_COLOUR,
+                             IDM_VIEW_COMP_CR, LOWORD(wparam), MF_BYCOMMAND);
+          return 0;
+        }
         case IDM_VIEW_BITWIN_1:
         case IDM_VIEW_BITWIN_2:
         case IDM_VIEW_BITWIN_5:
