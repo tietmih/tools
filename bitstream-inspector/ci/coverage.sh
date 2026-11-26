@@ -42,7 +42,7 @@ fi
 python3 "$ROOT/tests/check_parse.py" --bsinfo "$BUILD/bsinfo" \
     --ffprobe "$FFPROBE" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_headers.py" --bsinfo "$BUILD/bsinfo" \
-    --ffmpeg "$REF_FFMPEG" --vectors "$VECTORS"
+    --ffmpeg "$FFMPEG" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_sei.py" --bsinfo "$BUILD/bsinfo" \
     --ffmpeg "$REF_FFMPEG" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_hrd.py" --bsinfo "$BUILD/bsinfo" \
@@ -63,6 +63,8 @@ if [ -x "$BUILD/mtest" ]; then
         --expected-out "$VECTORS/expected.json"
     python3 "$ROOT/tests/check_ts.py" --mtest "$BUILD/mtest" \
         --vectors "$VECTORS"
+    python3 "$ROOT/tests/check_quality.py" --mtest "$BUILD/mtest" \
+        --ffmpeg "$FFMPEG" --vectors "$VECTORS"
 fi
 
 if ! command -v gcovr >/dev/null 2>&1; then

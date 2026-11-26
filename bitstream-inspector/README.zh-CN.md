@@ -211,6 +211,7 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 mtest stream.h264 --frame 5 --yuv frame.yuv   # 原生 planar YUV
 mtest stream.h264 --range 0:30 --yuv range.yuv  # YUV 帧范围
 mtest capture.ts --ts                 # MPEG-TS PID/PCR/continuity 扫描
+mtest stream.h264 --ref ref.yuv --quality  # 逐帧 PSNR/SSIM
 ```
 
 ## 验证状态
@@ -232,6 +233,7 @@ mtest capture.ts --ts                 # MPEG-TS PID/PCR/continuity 扫描
 | DPB/参考帧列表 | H.264/H.265 B 帧向量上 L0/L1 已填充；缺失参考路径已覆盖 |
 | Slice/tile 叠加 | 多 slice H.264 几何已检查；当前编码器无法生成 H.265 tile 向量 |
 | MPEG-TS 扫描 | 188/192/204 字节包、PID/stream type、PCR 样本和注入的 CC 错误均可检测 |
+| PSNR/SSIM | 逐帧值和汇总与 ffmpeg psnr/ssim 在舍入范围内一致 |
 | 缩略图条和 GOP 导航 | Windows 冒烟测试检查窗口创建；缩略图加载为手动验证 |
 | Windows 安装器：默认安装、自定义 `/D=`、`/LANG=2052`、从 0.3.0 升级、静默卸载 | 文件、快捷方式、HKCU 卸载项、版本交接和清理均验证 |
 | 运行时中英文切换及重启后保持 | 自动化/截图验证 |
@@ -243,6 +245,7 @@ mtest capture.ts --ts                 # MPEG-TS PID/PCR/continuity 扫描
 - 裸流没有时间戳；画面页从 GOP 起点解码，显示精确目标帧（包括 B 帧）。场图像
   按独立图像显示。
 - 还没有 DPB/GOP 图和宏块级熵解码。
+- PSNR/SSIM 目前通过 `mtest` 提供；GUI 质量曲线/差异视图尚未实现。
 - CPB 模型覆盖 SPS VUI HRD 的 CPB0；不支持 sub-picture、多 CPB 和
   concatenation。缺失的延迟会标记为估算值，没有 HRD 的流会给出带标注的平均码率
   估算。

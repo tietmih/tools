@@ -228,6 +228,7 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 mtest stream.h264 --frame 5 --yuv frame.yuv   # native planar YUV
 mtest stream.h264 --range 0:30 --yuv range.yuv  # YUV frame range
 mtest capture.ts --ts                 # MPEG-TS PID/PCR/continuity scan
+mtest stream.h264 --ref ref.yuv --quality  # per-frame PSNR/SSIM
 ```
 
 ## Verification status
@@ -249,6 +250,7 @@ below are automated in `tests/` and run by CI on every push:
 | DPB/reference lists | L0/L1 populated on H.264/H.265 B-frame vectors; missing-reference path covered |
 | Slice/tile overlay | multi-slice H.264 geometry checked; H.265 tile vector unavailable in the installed encoder |
 | MPEG-TS scan | 188/192/204-byte packets, PID/stream type, PCR samples and injected CC errors detected |
+| PSNR/SSIM | per-frame values and summaries match ffmpeg psnr/ssim within rounding |
 | Thumbnail strip and GOP navigation | window creation checked by the Windows smoke test; thumbnail loading is manual |
 | Windows installer: default, custom `/D=`, `/LANG=2052`, upgrade from 0.3.0, silent uninstall | files, shortcuts, HKCU entry, version hand-off and clean removal verified |
 | Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |
@@ -262,6 +264,8 @@ containers.
   GOP start to show the exact selected picture, including B pictures. Field
   pictures are shown as separate pictures.
 - No DPB/GOP graph or macroblock-level entropy decoding yet.
+- PSNR/SSIM are available from `mtest`; the GUI quality chart/difference view is
+  not implemented yet.
 - The CPB model covers CPB0 from SPS VUI HRD; sub-picture, multiple CPBs and
   concatenation are not modelled. Missing delays are marked as estimated, and
   streams without HRD get a labelled average-bitrate estimate.

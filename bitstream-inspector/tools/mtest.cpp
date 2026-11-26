@@ -1,9 +1,13 @@
 // Validation tool for the container demux / decode layer.
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
+#include "core/quality.h"
 #include "core/stream.h"
 #include "core/ts.h"
 #include "media/media_file.h"
@@ -47,7 +51,9 @@ int main(int argc, char** argv) {
   if (argc < 2) {
     std::fprintf(stderr,
                  "usage: mtest <file> [--frame N] [--ppm out.ppm] "
-                 "[--yuv out.yuv] [--range start:end] [--ts]\n");
+                 "[--yuv out.yuv] [--range start:end] [--ts] "
+                 "[--ref ref.yuv] [--ref-format fmt] [--quality] "
+                 "[--quality-csv out.csv]\n");
     return 2;
   }
   for (int i = 2; i < argc; i++) {
@@ -112,6 +118,10 @@ int main(int argc, char** argv) {
   const char* ppm_path = nullptr;
   const char* yuv_path = nullptr;
   const char* range = nullptr;
+  const char* ref_path = nullptr;
+  const char* ref_format = "yuv420p";
+  const char* quality_csv = nullptr;
+  bool quality = false;
   for (int i = 2; i < argc; i++) {
     if (std::strcmp(argv[i], "--frame") == 0 && i + 1 < argc)
       frame_index = std::atoi(argv[++i]);
@@ -121,7 +131,156 @@ int main(int argc, char** argv) {
       yuv_path = argv[++i];
     else if (std::strcmp(argv[i], "--range") == 0 && i + 1 < argc)
       range = argv[++i];
+    else if (std::strcmp(argv[i], "--ref") == 0 && i + 1 < argc)
+      ref_path = argv[++i];
+    else if (std::strcmp(argv[i], "--ref-format") == 0 && i + 1 < argc)
+      ref_format = argv[++i];
+    else if (std::strcmp(argv[i], "--quality") == 0)
+      quality = true;
+    else if (std::strcmp(argv[i], "--quality-csv") == 0 && i + 1 < argc)
+      quality_csv = argv[++i];
   }
+  if (quality && ref_path) {
+    int chroma = 1;
+    int depth = 8;
+    const std::string format = ref_format;
+    if (format == "yuv422p") chroma = 2;
+    if (format == "yuv444p") chroma = 3;
+    if (format == "yuv420p10le") depth = 10;
+    if (format == "yuv422p10le") {
+      chroma = 2;
+      depth = 10;
+    }
+    if (chroma != 1 && chroma != 2 && chroma != 3) {
+      std::fprintf(stderr, "unsupported --ref-format\n");
+      return 2;
+    }
+    FILE* ref_file = std::fopen(ref_path, "rb");
+    if (!ref_file) {
+      std::fprintf(stderr, "cannot open %s\n", ref_path);
+      return 1;
+    }
+    std::vector<size_t> order(stream.frames().size());
+    for (size_t i = 0; i < order.size(); i++) order[i] = i;
+    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+      return stream.frames()[a].display_index <
+             stream.frames()[b].display_index;
+    });
+    std::vector<uint8_t> ref;
+    int ref_w = 0, ref_h = 0;
+    double mse_y = 0.0, mse_u = 0.0, mse_v = 0.0, mse_avg = 0.0;
+    double ssim_sum = 0.0;
+    int count = 0;
+    int max_value = 255;
+    FILE* csv = nullptr;
+    if (quality_csv) {
+      csv = std::fopen(quality_csv, "wb");
+      if (csv) {
+        const unsigned char bom[3] = {0xEF, 0xBB, 0xBF};
+        std::fwrite(bom, 1, 3, csv);
+        std::fprintf(csv,
+                     "display_index,frame,psnr_y,psnr_u,psnr_v,psnr_avg,"
+                     "ssim\r\n");
+      }
+    }
+    for (size_t position = 0; position < order.size(); position++) {
+      const int frame_index = static_cast<int>(order[position]);
+      DecodedFrame frame;
+      bool keyframe_only = false;
+      if (!media.decodeFrameAt(stream, frame_index, frame, keyframe_only,
+                               error)) {
+        std::fprintf(stderr, "decode failed: %s\n", error.c_str());
+        std::fclose(ref_file);
+        if (csv) std::fclose(csv);
+        return 1;
+      }
+      if (ref_w == 0) {
+        ref_w = frame.width;
+        ref_h = frame.height;
+        if (frame.chroma_format != chroma || frame.bit_depth != depth) {
+          std::fprintf(stderr,
+                       "reference format does not match decoded "
+                       "frame\n");
+          std::fclose(ref_file);
+          if (csv) std::fclose(csv);
+          return 1;
+        }
+        const size_t cw = (chroma == 3) ? ref_w : (ref_w + 1) / 2;
+        const size_t ch = (chroma == 1) ? (ref_h + 1) / 2 : ref_h;
+        const size_t bytes = depth > 8 ? 2 : 1;
+        const size_t frame_size =
+            (static_cast<size_t>(ref_w) * ref_h + 2 * cw * ch) * bytes;
+        ref.resize(frame_size);
+      }
+      if (std::fread(ref.data(), 1, ref.size(), ref_file) != ref.size()) {
+        std::fprintf(stderr, "reference YUV ended before frame %zu\n",
+                     position);
+        break;
+      }
+      const size_t cw = (chroma == 3) ? ref_w : (ref_w + 1) / 2;
+      const size_t ch = (chroma == 1) ? (ref_h + 1) / 2 : ref_h;
+      const size_t bytes = depth > 8 ? 2 : 1;
+      YuvFrameView test;
+      YuvFrameView reference;
+      test.bit_depth = reference.bit_depth = depth;
+      test.chroma_format = reference.chroma_format = chroma;
+      for (int p = 0; p < 3; p++) {
+        const int pw = p == 0 ? ref_w : static_cast<int>(cw);
+        const int ph = p == 0 ? ref_h : static_cast<int>(ch);
+        test.planes[p] = {frame.planes[static_cast<size_t>(p)].data(),
+                          frame.strides[static_cast<size_t>(p)], pw, ph};
+      }
+      size_t offset = 0;
+      for (int p = 0; p < 3; p++) {
+        const int pw = p == 0 ? ref_w : static_cast<int>(cw);
+        const int ph = p == 0 ? ref_h : static_cast<int>(ch);
+        reference.planes[p] = {ref.data() + offset,
+                               pw * static_cast<int>(bytes), pw, ph};
+        offset += static_cast<size_t>(pw) * ph * bytes;
+      }
+      QualityMetrics metrics;
+      std::string quality_error;
+      if (!computeQuality(test, reference, metrics, quality_error)) {
+        std::fprintf(stderr, "quality failed: %s\n", quality_error.c_str());
+        std::fclose(ref_file);
+        if (csv) std::fclose(csv);
+        return 1;
+      }
+      mse_y += metrics.mse_y;
+      mse_u += metrics.mse_u;
+      mse_v += metrics.mse_v;
+      mse_avg += metrics.mse_avg;
+      max_value = metrics.max_value;
+      ssim_sum += metrics.ssim;
+      count++;
+      std::printf(
+          "quality %zu frame=%d psnr_y=%.4f psnr_u=%.4f "
+          "psnr_v=%.4f psnr_avg=%.4f ssim=%.6f\n",
+          position, frame_index, metrics.psnr_y, metrics.psnr_u, metrics.psnr_v,
+          metrics.psnr_avg, metrics.ssim);
+      if (csv) {
+        std::fprintf(csv, "%zu,%d,%.4f,%.4f,%.4f,%.4f,%.6f\r\n", position,
+                     frame_index, metrics.psnr_y, metrics.psnr_u,
+                     metrics.psnr_v, metrics.psnr_avg, metrics.ssim);
+      }
+    }
+    std::fclose(ref_file);
+    if (csv) std::fclose(csv);
+    if (count > 0) {
+      auto psnr = [&](double mse) {
+        if (mse <= 0.0) return std::numeric_limits<double>::infinity();
+        return 10.0 * std::log10(static_cast<double>(max_value) * max_value /
+                                 (mse / count));
+      };
+      std::printf(
+          "quality_summary frames=%d psnr_y=%.4f psnr_u=%.4f psnr_v=%.4f "
+          "psnr_avg=%.4f ssim=%.6f\n",
+          count, psnr(mse_y), psnr(mse_u), psnr(mse_v), psnr(mse_avg),
+          ssim_sum / count);
+    }
+    return count > 0 ? 0 : 1;
+  }
+
   if (range && yuv_path) {
     int first = 0, last = 0;
     if (std::sscanf(range, "%d:%d", &first, &last) != 2 || first < 0 ||

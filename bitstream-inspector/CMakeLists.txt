@@ -14,6 +14,7 @@ add_library(bs_core STATIC
     src/core/h264.cpp
     src/core/h265.cpp
     src/core/cpb.cpp
+    src/core/quality.cpp
     src/core/ts.cpp
     src/core/stream.cpp
 )
