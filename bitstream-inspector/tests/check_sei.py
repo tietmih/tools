@@ -82,6 +82,9 @@ def check_stream(ffmpeg, bsinfo, path, codec):
     errors = []
     if not indices:
         return [f"{name}: no SEI NALs found"]
+    hdr = run([bsinfo, path, "--hdr"]).stdout
+    if "consistent=1" not in hdr:
+        errors.append(f"{name}: HDR metadata consistency check failed")
     if "HDR10" not in summary:
         errors.append(f"{name}: stream summary has no HDR label")
     if "mastering_display_colour_volume" not in summary:
