@@ -625,7 +625,7 @@ void Stream::computeReferenceLists() {
   if (codec_ == Codec::H265) {
     const H265Sps& sps = h265_.sps;
     int modulus = 1;
-    if (sps.log2_max_poc_lsb_minus4 >= 0 && sps.log2_max_poc_lsb_minus4 < 30)
+    if (sps.log2_max_poc_lsb_minus4 >= 0 && sps.log2_max_poc_lsb_minus4 < 27)
       modulus = 1 << (sps.log2_max_poc_lsb_minus4 + 4);
     std::vector<int> prior;
     for (auto& f : frames_) {
