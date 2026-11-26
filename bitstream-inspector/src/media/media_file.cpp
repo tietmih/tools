@@ -55,6 +55,9 @@ struct MediaFile::Impl {
   std::vector<uint8_t> extradata_annexb;
   bool pending_ps = false;
   bool annexb_packets = false;
+  int preview_matrix = 2;
+  bool preview_full_range = false;
+  bool preview_override = false;
 
   ~Impl() { reset(); }
 
@@ -269,26 +272,120 @@ struct MediaFile::Impl {
     return ret;
   }
 
-  bool convert(AVFrame* frame, std::vector<uint8_t>& bgra, int& width,
-               int& height, std::string& error) {
-    width = frame->width;
-    height = frame->height;
-    if (width <= 0 || height <= 0) {
+  bool convert(AVFrame* frame, DecodedFrame& out, std::string& error) {
+    out = DecodedFrame();
+    out.width = frame->width;
+    out.height = frame->height;
+    if (out.width <= 0 || out.height <= 0) {
       error = "decoded frame has invalid dimensions";
       return false;
     }
-    sws = sws_getCachedContext(
-        sws, width, height, static_cast<AVPixelFormat>(frame->format), width,
-        height, AV_PIX_FMT_BGRA, SWS_BILINEAR, nullptr, nullptr, nullptr);
+    const AVPixelFormat format = static_cast<AVPixelFormat>(frame->format);
+    const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(format);
+    out.bit_depth = desc ? desc->comp[0].depth : 8;
+    if (desc) {
+      if (desc->log2_chroma_w == 1 && desc->log2_chroma_h == 1)
+        out.chroma_format = 1;
+      else if (desc->log2_chroma_w == 1)
+        out.chroma_format = 2;
+      else
+        out.chroma_format = 3;
+    }
+    switch (format) {
+      case AV_PIX_FMT_YUV420P:
+      case AV_PIX_FMT_YUVJ420P:
+        out.layout = YuvLayout::I420;
+        break;
+      case AV_PIX_FMT_YUV422P:
+      case AV_PIX_FMT_YUVJ422P:
+        out.layout = YuvLayout::I422;
+        break;
+      case AV_PIX_FMT_YUV444P:
+      case AV_PIX_FMT_YUVJ444P:
+        out.layout = YuvLayout::I444;
+        break;
+      case AV_PIX_FMT_YUV420P10LE:
+        out.layout = YuvLayout::P010;
+        break;
+      case AV_PIX_FMT_YUV422P10LE:
+        out.layout = YuvLayout::P210;
+        break;
+      case AV_PIX_FMT_YUV420P12LE:
+        out.layout = YuvLayout::P012;
+        break;
+      case AV_PIX_FMT_YUV422P12LE:
+        out.layout = YuvLayout::P212;
+        break;
+      default:
+        break;
+    }
+    const bool semiplanar =
+        format == AV_PIX_FMT_NV12 || format == AV_PIX_FMT_NV21;
+    const int planes = semiplanar ? 2 : 3;
+    const int bytes = out.bit_depth > 8 ? 2 : 1;
+    for (int p = 0; p < planes; p++) {
+      int pw = out.width;
+      int ph = out.height;
+      if (p > 0 && semiplanar) {
+        pw = out.width;
+        ph = (out.height + 1) / 2;
+      } else if (p > 0) {
+        if (out.chroma_format == 1) {
+          pw = (out.width + 1) / 2;
+          ph = (out.height + 1) / 2;
+        } else if (out.chroma_format == 2) {
+          pw = (out.width + 1) / 2;
+        }
+      }
+      const int row_bytes = pw * bytes;
+      const uint8_t* src = frame->data[p];
+      int stride = frame->linesize[p];
+      if (stride < 0) {
+        src += stride * (ph - 1);
+        stride = -stride;
+      }
+      std::vector<uint8_t> plane(static_cast<size_t>(row_bytes) * ph);
+      for (int y = 0; y < ph; y++)
+        std::memcpy(plane.data() + y * row_bytes, src + y * stride, row_bytes);
+      out.planes.push_back(std::move(plane));
+      out.strides.push_back(row_bytes);
+    }
+
+    sws = sws_getCachedContext(sws, out.width, out.height, format, out.width,
+                               out.height, AV_PIX_FMT_BGRA, SWS_BILINEAR,
+                               nullptr, nullptr, nullptr);
     if (!sws) {
       error = "sws_getCachedContext failed";
       return false;
     }
-    bgra.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
-    uint8_t* dst_data[4] = {bgra.data(), nullptr, nullptr, nullptr};
-    int dst_linesize[4] = {width * 4, 0, 0, 0};
-    sws_scale(sws, frame->data, frame->linesize, 0, height, dst_data,
+    if (preview_override) {
+      int colorspace = SWS_CS_ITU709;
+      if (preview_matrix == 5 || preview_matrix == 6 || preview_matrix == 7)
+        colorspace = SWS_CS_ITU601;
+      else if (preview_matrix == 9 || preview_matrix == 10)
+        colorspace = SWS_CS_BT2020;
+      else if (preview_matrix == 1)
+        colorspace = SWS_CS_ITU709;
+      const int* coefficients = sws_getCoefficients(colorspace);
+      sws_setColorspaceDetails(sws, coefficients, preview_full_range ? 1 : 0,
+                               coefficients, 1, 0, 1 << 16, 1 << 16);
+    }
+    out.bgra.resize(static_cast<size_t>(out.width) *
+                    static_cast<size_t>(out.height) * 4);
+    uint8_t* dst_data[4] = {out.bgra.data(), nullptr, nullptr, nullptr};
+    int dst_linesize[4] = {out.width * 4, 0, 0, 0};
+    sws_scale(sws, frame->data, frame->linesize, 0, out.height, dst_data,
               dst_linesize);
+    return true;
+  }
+
+  bool convert(AVFrame* frame, std::vector<uint8_t>& bgra, int& width,
+               int& height, std::string& error) {
+    DecodedFrame out;
+    if (!convert(frame, out, error)) return false;
+    bgra = std::move(out.bgra);
+    width = out.width;
+    height = out.height;
     return true;
   }
 
@@ -309,6 +406,14 @@ const ContainerInfo& MediaFile::info() const { return impl_->info; }
 const std::vector<MediaPacket>& MediaFile::packets() const {
   return impl_->packets;
 }
+
+void MediaFile::setPreviewColour(int matrix, bool full_range) {
+  impl_->preview_matrix = matrix;
+  impl_->preview_full_range = full_range;
+  impl_->preview_override = true;
+}
+
+void MediaFile::clearPreviewColour() { impl_->preview_override = false; }
 
 bool MediaFile::open(const std::string& path, std::string& error) {
   if (std::getenv("BS_MEDIA_DEBUG")) av_log_set_level(AV_LOG_DEBUG);
@@ -529,8 +634,8 @@ void MediaFile::applyTiming(Stream& stream) const {
   stream.applyFrameTiming(timing);
 }
 
-bool MediaFile::decodePacket(int packet_index, std::vector<uint8_t>& bgra,
-                             int& width, int& height, std::string& error) {
+bool MediaFile::decodePacketFrame(int packet_index, DecodedFrame& out,
+                                  std::string& error) {
   if (!impl_->fmt || !impl_->extracted) {
     error = "demux the stream before decoding";
     return false;
@@ -571,7 +676,7 @@ bool MediaFile::decodePacket(int packet_index, std::vector<uint8_t>& bgra,
       if (ret < 0 && ret != AVERROR(EAGAIN)) continue;
       while (avcodec_receive_frame(impl_->dec, frame) == 0) {
         if (!converted && video_packets >= kf + 1) {
-          if (!impl_->convert(frame, bgra, width, height, error)) {
+          if (!impl_->convert(frame, out, error)) {
             av_frame_free(&frame);
             av_packet_free(&pkt);
             return false;
@@ -586,7 +691,7 @@ bool MediaFile::decodePacket(int packet_index, std::vector<uint8_t>& bgra,
       avcodec_send_packet(impl_->dec, nullptr);
       while (avcodec_receive_frame(impl_->dec, frame) == 0) {
         if (!converted) {
-          if (!impl_->convert(frame, bgra, width, height, error)) {
+          if (!impl_->convert(frame, out, error)) {
             av_frame_free(&frame);
             av_packet_free(&pkt);
             return false;
@@ -651,7 +756,7 @@ bool MediaFile::decodePacket(int packet_index, std::vector<uint8_t>& bgra,
                    static_cast<long long>(fts), static_cast<long long>(fdts),
                    static_cast<long long>(target.pos));
     if (!match) return false;
-    if (!impl_->convert(f, bgra, width, height, error)) return false;
+    if (!impl_->convert(f, out, error)) return false;
     return true;
   };
 
@@ -706,6 +811,154 @@ bool MediaFile::decodePacket(int packet_index, std::vector<uint8_t>& bgra,
       error = "decoded frame did not match the requested packet";
     return false;
   }
+  return true;
+}
+
+bool MediaFile::decodePacket(int packet_index, std::vector<uint8_t>& bgra,
+                             int& width, int& height, std::string& error) {
+  DecodedFrame frame;
+  if (!decodePacketFrame(packet_index, frame, error)) return false;
+  bgra = std::move(frame.bgra);
+  width = frame.width;
+  height = frame.height;
+  return true;
+}
+
+bool MediaFile::decodeRawFrame(const Stream& stream, int frame_index,
+                               DecodedFrame& out, bool& keyframe_only,
+                               std::string& error) {
+  keyframe_only = false;
+  if (!impl_->ensureDecoder(error)) return false;
+  const FrameInfo& target = stream.frames()[static_cast<size_t>(frame_index)];
+  int gop = target.gop_start >= 0 ? target.gop_start : 0;
+  if (gop >= static_cast<int>(stream.frames().size())) gop = 0;
+  const FrameInfo& first = stream.frames()[static_cast<size_t>(gop)];
+  int start_packet =
+      first.packet_index >= 0 ? first.packet_index : target.packet_index;
+  if (start_packet < 0 ||
+      start_packet >= static_cast<int>(impl_->packets.size()))
+    start_packet = 0;
+  int target_position = frame_index - gop;
+  if (first.display_index >= 0 && target.display_index >= 0)
+    target_position = target.display_index - first.display_index;
+  if (target_position < 0) target_position = 0;
+
+  if (!impl_->seekToStart()) {
+    error = "cannot rewind the stream for decoding";
+    return false;
+  }
+  impl_->pending_ps = impl_->annexb_packets && !impl_->extradata_annexb.empty();
+  AVPacket* pkt = av_packet_alloc();
+  AVFrame* frame = av_frame_alloc();
+  if (!pkt || !frame) {
+    av_packet_free(&pkt);
+    av_frame_free(&frame);
+    error = "cannot allocate decoder buffers";
+    return false;
+  }
+  int video_packets = 0;
+  int output_index = 0;
+  bool done = false;
+  auto receive = [&]() -> bool {
+    while (avcodec_receive_frame(impl_->dec, frame) == 0) {
+      if (output_index == target_position) {
+        if (!impl_->convert(frame, out, error)) {
+          av_frame_unref(frame);
+          return false;
+        }
+        done = true;
+        av_frame_unref(frame);
+        return true;
+      }
+      output_index++;
+      av_frame_unref(frame);
+    }
+    return false;
+  };
+
+  while (!done && av_read_frame(impl_->fmt, pkt) >= 0) {
+    if (pkt->stream_index != impl_->stream) {
+      av_packet_unref(pkt);
+      continue;
+    }
+    video_packets++;
+    if (video_packets < start_packet + 1) {
+      av_packet_unref(pkt);
+      continue;
+    }
+    int ret = impl_->sendPacket(pkt, error);
+    av_packet_unref(pkt);
+    if (ret < 0 && ret != AVERROR(EAGAIN)) continue;
+    receive();
+  }
+  if (!done) {
+    avcodec_send_packet(impl_->dec, nullptr);
+    receive();
+  }
+  av_frame_free(&frame);
+  av_packet_free(&pkt);
+  if (!done) {
+    error = "requested frame was not produced by the decoder";
+    return false;
+  }
+  return true;
+}
+
+bool MediaFile::decodeFrameAt(const Stream& stream, int frame_index,
+                              DecodedFrame& frame, bool& keyframe_only,
+                              std::string& error) {
+  keyframe_only = false;
+  if (frame_index < 0 ||
+      frame_index >= static_cast<int>(stream.frames().size())) {
+    error = "frame index out of range";
+    return false;
+  }
+  const FrameInfo& f = stream.frames()[static_cast<size_t>(frame_index)];
+  if (f.packet_index < 0 ||
+      f.packet_index >= static_cast<int>(impl_->packets.size())) {
+    error = "frame has no packet mapping";
+    return false;
+  }
+  const MediaPacket& p = impl_->packets[static_cast<size_t>(f.packet_index)];
+  const ColourDescription colour = stream.colourDescription();
+  bool ok = false;
+  if (!p.has_pts && !p.has_dts)
+    ok = decodeRawFrame(stream, frame_index, frame, keyframe_only, error);
+  else
+    ok = decodePacketFrame(f.packet_index, frame, error);
+  if (ok) {
+    frame.matrix = colour.matrix;
+    frame.full_range = stream.videoFullRange();
+  }
+  return ok;
+}
+
+bool MediaFile::decodeThumbnailAt(const Stream& stream, int frame_index,
+                                  int width, int height,
+                                  std::vector<uint8_t>& bgra,
+                                  std::string& error) {
+  DecodedFrame frame;
+  bool keyframe_only = false;
+  if (!decodeFrameAt(stream, frame_index, frame, keyframe_only, error))
+    return false;
+  if (frame.bgra.empty() || width <= 0 || height <= 0) {
+    error = "no decoded image for thumbnail";
+    return false;
+  }
+  SwsContext* ctx = sws_getCachedContext(
+      nullptr, frame.width, frame.height, AV_PIX_FMT_BGRA, width, height,
+      AV_PIX_FMT_BGRA, SWS_BILINEAR, nullptr, nullptr, nullptr);
+  if (!ctx) {
+    error = "cannot scale thumbnail";
+    return false;
+  }
+  bgra.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+  uint8_t* dst[4] = {bgra.data(), nullptr, nullptr, nullptr};
+  int dst_stride[4] = {width * 4, 0, 0, 0};
+  const uint8_t* src[4] = {frame.bgra.data(), nullptr, nullptr, nullptr};
+  int src_stride[4] = {frame.width * 4, 0, 0, 0};
+  sws_scale(ctx, src, src_stride, 0, frame.height, dst, dst_stride);
+  sws_freeContext(ctx);
   return true;
 }
 

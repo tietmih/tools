@@ -36,8 +36,8 @@ if [ ! -f ffbuild/config.mak ]; then
         --enable-parser=h264,hevc \
         --enable-protocol=file \
         --enable-filter=select,scale,format,null \
-        --enable-muxer=image2,null \
-        --enable-encoder=ppm \
+        --enable-muxer=image2,null,rawvideo \
+        --enable-encoder=ppm,rawvideo \
         --enable-bsf=trace_headers,h264_metadata,hevc_metadata,h264_mp4toannexb,hevc_mp4toannexb \
         --disable-network --disable-autodetect \
         --disable-iconv --disable-zlib --disable-bzlib --disable-lzma \

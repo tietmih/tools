@@ -9,6 +9,18 @@
 
 using namespace bs;
 
+static bool writeYuv(const char* path, const DecodedFrame& frame) {
+  FILE* f = std::fopen(path, "wb");
+  if (!f) return false;
+  bool ok = true;
+  for (const auto& plane : frame.planes) {
+    if (std::fwrite(plane.data(), 1, plane.size(), f) != plane.size())
+      ok = false;
+  }
+  std::fclose(f);
+  return ok;
+}
+
 static bool writePpm(const char* path, const std::vector<uint8_t>& bgra,
                      int width, int height) {
   FILE* f = std::fopen(path, "wb");
@@ -27,7 +39,9 @@ static bool writePpm(const char* path, const std::vector<uint8_t>& bgra,
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    std::fprintf(stderr, "usage: mtest <file> [--frame N] [--ppm out.ppm]\n");
+    std::fprintf(stderr,
+                 "usage: mtest <file> [--frame N] [--ppm out.ppm] "
+                 "[--yuv out.yuv]\n");
     return 2;
   }
   MediaFile media;
@@ -69,28 +83,42 @@ int main(int argc, char** argv) {
 
   int frame_index = 0;
   const char* ppm_path = nullptr;
+  const char* yuv_path = nullptr;
   for (int i = 2; i < argc; i++) {
     if (std::strcmp(argv[i], "--frame") == 0 && i + 1 < argc)
       frame_index = std::atoi(argv[++i]);
     else if (std::strcmp(argv[i], "--ppm") == 0 && i + 1 < argc)
       ppm_path = argv[++i];
+    else if (std::strcmp(argv[i], "--yuv") == 0 && i + 1 < argc)
+      yuv_path = argv[++i];
   }
-  if (ppm_path) {
-    std::vector<uint8_t> bgra;
-    int w = 0, h = 0;
+  if (ppm_path || yuv_path) {
+    DecodedFrame frame;
     bool keyframe_only = false;
-    if (!media.decodeFrameAt(stream, frame_index, bgra, w, h, keyframe_only,
+    if (!media.decodeFrameAt(stream, frame_index, frame, keyframe_only,
                              error)) {
       std::fprintf(stderr, "decode failed: %s\n", error.c_str());
       return 1;
     }
-    std::printf("decoded frame=%d %dx%d keyframe_only=%d\n", frame_index, w, h,
-                keyframe_only ? 1 : 0);
-    if (!writePpm(ppm_path, bgra, w, h)) {
-      std::fprintf(stderr, "cannot write %s\n", ppm_path);
-      return 1;
+    std::printf(
+        "decoded frame=%d %dx%d keyframe_only=%d depth=%d chroma=%d "
+        "planes=%zu\n",
+        frame_index, frame.width, frame.height, keyframe_only ? 1 : 0,
+        frame.bit_depth, frame.chroma_format, frame.planes.size());
+    if (ppm_path) {
+      if (!writePpm(ppm_path, frame.bgra, frame.width, frame.height)) {
+        std::fprintf(stderr, "cannot write %s\n", ppm_path);
+        return 1;
+      }
+      std::printf("wrote %s\n", ppm_path);
     }
-    std::printf("wrote %s\n", ppm_path);
+    if (yuv_path) {
+      if (!writeYuv(yuv_path, frame)) {
+        std::fprintf(stderr, "cannot write %s\n", yuv_path);
+        return 1;
+      }
+      std::printf("wrote %s\n", yuv_path);
+    }
   }
   return 0;
 }

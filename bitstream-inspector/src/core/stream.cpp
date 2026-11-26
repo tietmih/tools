@@ -219,6 +219,7 @@ void Stream::analyze(std::string& error) {
     analyzeH264(error);
   if (!frames_.empty()) {
     associateNonVcl();
+    computeDisplayOrder();
     analyzeSeiHrd();
     computeCpbModel();
   }
@@ -603,6 +604,29 @@ void Stream::analyzeH265(std::string& error) {
 
   if (frames_.empty())
     error = "no decodable slices found (framing may not be Annex B)";
+}
+
+void Stream::computeDisplayOrder() {
+  int display = 0;
+  size_t start = 0;
+  while (start < frames_.size()) {
+    size_t end = start + 1;
+    while (end < frames_.size()) {
+      if (frames_[end].idr || frames_[end].irap) break;
+      end++;
+    }
+    std::vector<size_t> order;
+    order.reserve(end - start);
+    for (size_t i = start; i < end; i++) order.push_back(i);
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+      return frames_[a].poc < frames_[b].poc;
+    });
+    for (size_t index : order) {
+      frames_[index].gop_start = static_cast<int>(start);
+      frames_[index].display_index = display++;
+    }
+    start = end;
+  }
 }
 
 bool Stream::makeSeiHrdContext(int sps_version, bool hevc,
@@ -1128,7 +1152,7 @@ bool Stream::mapBitRange(size_t nal_index, uint64_t bit_pos, uint64_t bit_len,
   return true;
 }
 
-std::string Stream::hdrSummary() const {
+ColourDescription Stream::colourDescription() const {
   ColourDescription colour;
   if (codec_ == Codec::H264 && h264_.have_sps) {
     colour.present = h264_.sps.colour_description_present;
@@ -1141,7 +1165,19 @@ std::string Stream::hdrSummary() const {
     colour.transfer = h265_.sps.transfer_characteristics;
     colour.matrix = h265_.sps.matrix_coefficients;
   }
-  return formatHdrSummary(hdr_, colour);
+  return colour;
+}
+
+bool Stream::videoFullRange() const {
+  if (codec_ == Codec::H264 && h264_.have_sps)
+    return h264_.sps.video_full_range;
+  if (codec_ == Codec::H265 && h265_.have_sps)
+    return h265_.sps.video_full_range;
+  return false;
+}
+
+std::string Stream::hdrSummary() const {
+  return formatHdrSummary(hdr_, colourDescription());
 }
 
 std::string Stream::streamSummary() const {

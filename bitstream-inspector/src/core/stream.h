@@ -41,6 +41,8 @@ struct FrameInfo {
                // slice_qp_delta)
   int sps_version = -1;
   int pps_version = -1;
+  int display_index = -1;  // position in display order, across the file
+  int gop_start = -1;      // decode-order index of the GOP's first frame
   // Filled in when the stream came from a container (or a demuxer with timing).
   int64_t pts = 0;
   int64_t dts = 0;
@@ -94,6 +96,8 @@ class Stream {
   bool haveH265Params() const { return h265_.have_sps || h265_.have_pps; }
   const SeiHdrInfo& seiHdrInfo() const { return hdr_; }
   const CpbModelResult& cpbModel() const { return cpb_; }
+  ColourDescription colourDescription() const;
+  bool videoFullRange() const;
   std::string hdrSummary() const;
   std::string cpbCsv() const;
 
@@ -120,6 +124,7 @@ class Stream {
   void analyzeH265(std::string& error);
   void analyzeSeiHrd();
   void computeCpbModel();
+  void computeDisplayOrder();
   bool makeSeiHrdContext(int sps_version, bool hevc, SeiHrdContext& ctx) const;
   void associateNonVcl();
   bool looksLikeHevc(const uint8_t* data, size_t size) const;

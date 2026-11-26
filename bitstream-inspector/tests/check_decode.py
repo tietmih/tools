@@ -101,20 +101,55 @@ def check_container(mtest, ffmpeg, ffprobe, vectors, name):
     return errors, expected
 
 
-def check_raw_fallback(mtest, vectors):
-    name = "h264_bf0.h264"
-    path = os.path.join(vectors, name)
-    ppm = os.path.join(vectors, name + ".fallback.ppm")
-    proc = run([mtest, path, "--frame", "5", "--ppm", ppm], check=False)
-    text = proc.stdout.decode("utf-8", "replace")
-    if proc.returncode != 0:
-        return [f"{name}: raw decode failed"]
-    m = DECODED.search(text)
-    if not m:
-        return [f"{name}: no decoded frame line"]
-    if int(m.group(4)) != 1:
-        return [f"{name}: raw stream should report keyframe_only=1"]
-    return []
+def check_raw_exact(mtest, ffmpeg, vectors):
+    targets = (("h264_bf0.h264", 5), ("h264_b.h264", 4),
+               ("h265_b.h265", 5))
+    errors = []
+    for name, ref_index in targets:
+        path = os.path.join(vectors, name)
+        ppm = os.path.join(vectors, name + ".exact.ppm")
+        ref = os.path.join(vectors, name + ".exact.ref.ppm")
+        proc = run([mtest, path, "--frame", "5", "--ppm", ppm], check=False)
+        text = proc.stdout.decode("utf-8", "replace")
+        if proc.returncode != 0:
+            errors.append(f"{name}: raw decode failed")
+            continue
+        m = DECODED.search(text)
+        if not m:
+            errors.append(f"{name}: no decoded frame line")
+            continue
+        if int(m.group(4)) != 0:
+            errors.append(f"{name}: raw stream should decode the exact frame")
+            continue
+        run([ffmpeg, "-v", "error", "-y", "-i", path, "-vf",
+             f"select='eq(n\\,{ref_index})'", "-fps_mode", "passthrough",
+             "-frames:v", "1", "-pix_fmt", "rgb24", ref])
+        w1, h1, pix1 = read_ppm(ppm)
+        w2, h2, pix2 = read_ppm(ref)
+        if (w1, h1) != (w2, h2):
+            errors.append(f"{name}: raw frame size {w1}x{h1} vs {w2}x{h2}")
+        elif pix1 != pix2:
+            errors.append(f"{name}: raw exact frame differs from ffmpeg")
+    return errors
+
+def check_yuv_export(mtest, ffmpeg, vectors):
+    targets = (("h264_bf0.h264", "yuv420p"),
+               ("h265_main10.h265", "yuv420p10le"))
+    errors = []
+    for name, pix_fmt in targets:
+        path = os.path.join(vectors, name)
+        ours = os.path.join(vectors, name + ".exact.yuv")
+        ref = os.path.join(vectors, name + ".exact.ref.yuv")
+        proc = run([mtest, path, "--frame", "5", "--yuv", ours], check=False)
+        if proc.returncode != 0:
+            errors.append(f"{name}: YUV export failed")
+            continue
+        run([ffmpeg, "-v", "error", "-y", "-i", path, "-vf",
+             "select='eq(n\\,5)'", "-fps_mode", "passthrough", "-frames:v",
+             "1", "-f", "rawvideo", "-pix_fmt", pix_fmt, ref])
+        if open(ours, "rb").read() != open(ref, "rb").read():
+            errors.append(f"{name}: raw YUV planes differ from ffmpeg")
+    return errors
 
 
 def main():
@@ -139,8 +174,11 @@ def main():
         for error in errors:
             print("  " + error)
         failures.extend(errors)
-    errors = check_raw_fallback(args.mtest, args.vectors)
-    print(f"raw keyframe fallback: {'ok' if not errors else 'FAILED'}")
+    errors = check_raw_exact(args.mtest, args.ffmpeg, args.vectors)
+    print(f"raw exact frame: {'ok' if not errors else 'FAILED'}")
+    yuv_errors = check_yuv_export(args.mtest, args.ffmpeg, args.vectors)
+    print(f"raw YUV export: {'ok' if not yuv_errors else 'FAILED'}")
+    errors.extend(yuv_errors)
     failures.extend(errors)
     for error in errors:
         print("  " + error)
