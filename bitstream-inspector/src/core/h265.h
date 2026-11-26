@@ -73,6 +73,11 @@ struct H265Sps {
   bool timing_info_present = false;
   uint32_t num_units_in_tick = 0;
   uint32_t time_scale = 0;
+  bool video_full_range = false;
+  bool colour_description_present = false;
+  int colour_primaries = 2;
+  int transfer_characteristics = 2;
+  int matrix_coefficients = 2;
   bool field_seq_flag = false;
 
   std::vector<H265Rps> st_rps;

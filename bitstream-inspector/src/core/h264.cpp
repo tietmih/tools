@@ -93,9 +93,11 @@ void parseH264Vui(FieldReader& r, H264Sps& sps) {
     bool colour = false;
     r.flag("colour_description_present_flag", colour);
     if (colour) {
-      r.u(8, "colour_primaries");
-      r.u(8, "transfer_characteristics");
-      r.u(8, "matrix_coefficients");
+      sps.colour_description_present = true;
+      sps.colour_primaries = static_cast<int>(r.u(8, "colour_primaries"));
+      sps.transfer_characteristics =
+          static_cast<int>(r.u(8, "transfer_characteristics"));
+      sps.matrix_coefficients = static_cast<int>(r.u(8, "matrix_coefficients"));
     }
   }
   bool chroma_loc = false;
@@ -391,120 +393,6 @@ void parseH264Pps(BitReader& br, SyntaxBuilder* sb, H264Pps& pps,
     pps.second_chroma_qp_index_offset = r.se("second_chroma_qp_index_offset");
   }
   pps.valid = !r.fail();
-}
-
-namespace {
-
-const char* seiPayloadName(int type) {
-  static const char* names[] = {
-      "buffering_period",
-      "pic_timing",
-      "pan_scan_rect",
-      "filler_payload",
-      "user_data_registered_itu_t_t35",
-      "user_data_unregistered",
-      "recovery_point",
-      "dec_ref_pic_marking_repetition",
-      "spare",
-      "scene_info",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "spare",
-      "mastering_display_colour_volume",
-      "colour_remapping_info",
-      "spare",
-      "spare",
-  };
-  const int count = static_cast<int>(std::size(names));
-  if (type < 0 || type >= count) return "reserved";
-  // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): guarded by count.
-  return names[static_cast<size_t>(type)];
-}
-
-}  // namespace
-
-void parseH264Sei(const Rbsp& rbsp, SyntaxBuilder* sb, std::string& summary) {
-  BitReader br(rbsp.data.data(), rbsp.data.size());
-  Section s(sb, "sei_rbsp");
-  int count = 0;
-  while (br.more_rbsp_data() && !br.fail() && count < 64) {
-    uint64_t type_pos = br.pos();
-    uint32_t payload_type = 0;
-    while (br.pos() < rbsp.data.size() * 8) {
-      uint32_t b = br.u(8);
-      payload_type += b;
-      if (b != 255) break;
-    }
-    uint32_t payload_size = 0;
-    while (br.pos() < rbsp.data.size() * 8) {
-      uint32_t b = br.u(8);
-      payload_size += b;
-      if (b != 255) break;
-    }
-    if (br.fail()) break;
-    Section p(sb, ("sei_message[" + std::to_string(count) + "]").c_str());
-    if (sb) {
-      sb->addUInt("payloadType", payload_type, type_pos, br.pos() - type_pos);
-      sb->add("  meaning", seiPayloadName(static_cast<int>(payload_type)),
-              type_pos, 0);
-      sb->addUInt("payloadSize", payload_size, br.pos(), 0);
-    }
-    if (summary.empty())
-      summary = seiPayloadName(static_cast<int>(payload_type));
-    else
-      summary +=
-          ", " + std::string(seiPayloadName(static_cast<int>(payload_type)));
-    if (payload_size > br.bits_left() / 8 + 1) {
-      if (sb) sb->addError("payload size exceeds remaining data");
-      break;
-    }
-    uint64_t start = br.pos();
-    br.skip(payload_size * 8);
-    if (sb)
-      sb->add("payload", "(" + std::to_string(payload_size) + " bytes)", start,
-              br.pos() - start);
-    count++;
-    if (br.more_rbsp_data()) {
-      // trailing bits of each sei_message handled by more_rbsp_data()
-    }
-  }
 }
 
 void parseH264SliceHeader(BitReader& br, SyntaxBuilder* sb, H264State& state,

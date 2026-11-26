@@ -80,6 +80,14 @@ def main():
                       ["-preset", "ultrafast", "-pix_fmt", "yuv444p",
                        "-profile:v", "high444", "-bf", "0", "-f", "h264"],
                       frames=20)
+    # HDR10 mastering display and content light level SEI.
+    h264_hdr = encode(
+        ff, out, "h264_hdr.h264", "h264",
+        x264 + ["-g", "10", "-bf", "0", "-x264-params",
+                "mastering-display=G(13250,34500)B(7500,3000)"
+                "R(34000,16000)WP(15635,16450)L(10000000,1):cll=1000,400",
+                "-f", "h264"],
+        frames=10)
 
     # H.265 Main and Main10, one with B frames.
     h265_bf0 = encode(ff, out, "h265_bf0.mp4", "h265",
@@ -105,6 +113,15 @@ def main():
                          "-x265-params",
                          "log-level=error:keyint=10:bframes=0:wpp=1:tiles=2x2",
                          "-f", "hevc"], frames=20, size="640x480")
+    # HDR10 metadata in prefix SEI.
+    h265_hdr = encode(
+        ff, out, "h265_hdr.h265", "h265",
+        ["-preset", "ultrafast", "-pix_fmt", "yuv420p", "-x265-params",
+         "log-level=error:keyint=10:bframes=0:"
+         "master-display=G(13250,34500)B(7500,3000)R(34000,16000)"
+         "WP(15635,16450)L(10000000,1):max-cll=1000,400",
+         "-f", "hevc"],
+        frames=10)
 
     # Annex B elementary streams extracted from the MP4.
     h264_es = os.path.join(out, "h264_bf0.h264")
@@ -115,8 +132,8 @@ def main():
           ["-bsf:v", "hevc_mp4toannexb", "-f", "hevc"])
 
     raw = [h264_es, h264_b, h264_slices, h264_422, h264_long,
-           h264_interlaced, h264_444, h265_es, h265_b, h265_main10,
-           h265_main12, h265_tiles]
+           h264_interlaced, h264_444, h264_hdr, h265_es, h265_b, h265_main10,
+           h265_main12, h265_tiles, h265_hdr]
     containers = [h264_bf0, h265_bf0]
     for src, codec, stem in ((h264_bf0, "h264", "h264_bf0"),
                              (h265_bf0, "h265", "h265_bf0")):

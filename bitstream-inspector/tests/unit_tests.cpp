@@ -13,6 +13,7 @@
 #include "core/h264.h"
 #include "core/h265.h"
 #include "core/nal.h"
+#include "core/sei.h"
 #include "core/stream.h"
 
 namespace {
@@ -412,6 +413,140 @@ void testH265ParameterSets() {
   CHECK(info.header_bits > 0);
 }
 
+void appendU16(std::vector<uint8_t>& out, uint16_t value) {
+  out.push_back(static_cast<uint8_t>(value >> 8));
+  out.push_back(static_cast<uint8_t>(value));
+}
+
+void appendU32(std::vector<uint8_t>& out, uint32_t value) {
+  out.push_back(static_cast<uint8_t>(value >> 24));
+  out.push_back(static_cast<uint8_t>(value >> 16));
+  out.push_back(static_cast<uint8_t>(value >> 8));
+  out.push_back(static_cast<uint8_t>(value));
+}
+
+const bs::SyntaxNode* findNode(const std::vector<bs::SyntaxNode>& nodes,
+                               const std::string& name) {
+  for (const auto& node : nodes) {
+    if (node.name == name) return &node;
+    const bs::SyntaxNode* found = findNode(node.children, name);
+    if (found) return found;
+  }
+  return nullptr;
+}
+
+std::vector<uint8_t> seiMessage(uint32_t type,
+                                const std::vector<uint8_t>& payload) {
+  std::vector<uint8_t> out;
+  uint32_t t = type;
+  while (t >= 255) {
+    out.push_back(255);
+    t -= 255;
+  }
+  out.push_back(static_cast<uint8_t>(t));
+  uint32_t size = static_cast<uint32_t>(payload.size());
+  while (size >= 255) {
+    out.push_back(255);
+    size -= 255;
+  }
+  out.push_back(static_cast<uint8_t>(size));
+  out.insert(out.end(), payload.begin(), payload.end());
+  return out;
+}
+
+void testSeiHdr() {
+  CHECK_EQ(std::string(bs::seiPayloadName(137, false)),
+           std::string("mastering_display_colour_volume"));
+  CHECK_EQ(std::string(bs::seiPayloadName(144, false)),
+           std::string("content_light_level_info"));
+  CHECK_EQ(std::string(bs::seiPayloadName(147, false)),
+           std::string("alternative_transfer_characteristics"));
+  CHECK_EQ(std::string(bs::seiPayloadName(51, false)),
+           std::string("three_dimensional_reference_displays_info"));
+  CHECK_EQ(std::string(bs::seiPayloadName(52, false)),
+           std::string("depth_timing"));
+  CHECK_EQ(std::string(bs::seiPayloadName(142, false)),
+           std::string("colour_remapping_info"));
+  CHECK_EQ(std::string(bs::seiPayloadName(137, true)),
+           std::string("mastering_display_colour_volume"));
+
+  std::vector<uint8_t> mdcv;
+  appendU16(mdcv, 13250);
+  appendU16(mdcv, 34500);
+  appendU16(mdcv, 7500);
+  appendU16(mdcv, 3000);
+  appendU16(mdcv, 34000);
+  appendU16(mdcv, 16000);
+  appendU16(mdcv, 15635);
+  appendU16(mdcv, 16450);
+  appendU32(mdcv, 10000000);
+  appendU32(mdcv, 1);
+
+  std::vector<uint8_t> cll;
+  appendU16(cll, 1000);
+  appendU16(cll, 400);
+
+  std::vector<uint8_t> atc = {16};
+  std::vector<uint8_t> t35 = {0xB5, 0x00, 0x3C, 0x00, 0x01, 0x04, 0x00};
+
+  std::vector<uint8_t> bytes;
+  for (const auto& message : {seiMessage(137, mdcv), seiMessage(144, cll),
+                              seiMessage(147, atc), seiMessage(4, t35)}) {
+    bytes.insert(bytes.end(), message.begin(), message.end());
+  }
+  bytes.push_back(0x80);
+
+  bs::Rbsp rbsp;
+  rbsp.data = bytes;
+  bs::SeiInfo info;
+  bs::parseSei(rbsp, nullptr, false, info);
+  CHECK_EQ(info.messages.size(), 4u);
+  CHECK(info.hdr.mastering_display.present);
+  CHECK_EQ(info.hdr.mastering_display.primaries_x[0], 13250);
+  CHECK_EQ(info.hdr.mastering_display.primaries_y[0], 34500);
+  CHECK_EQ(info.hdr.mastering_display.max_luminance, 10000000u);
+  CHECK_EQ(info.hdr.mastering_display.min_luminance, 1u);
+  CHECK(info.hdr.content_light_level.present);
+  CHECK_EQ(info.hdr.content_light_level.max_cll, 1000);
+  CHECK_EQ(info.hdr.content_light_level.max_fall, 400);
+  CHECK(info.hdr.alternative_transfer.present);
+  CHECK_EQ(info.hdr.alternative_transfer.preferred_transfer_characteristics,
+           16);
+  CHECK(info.hdr.hdr10_plus);
+
+  bs::ColourDescription colour;
+  colour.present = true;
+  colour.primaries = 9;
+  colour.transfer = 16;
+  colour.matrix = 9;
+  std::string summary = bs::formatHdrSummary(info.hdr, colour);
+  CHECK(summary.find("HDR10+") == 0);
+  CHECK(summary.find("BT.2020/PQ") != std::string::npos);
+  CHECK(summary.find("MaxCLL 1000/400") != std::string::npos);
+
+  bs::SeiInfo hlg;
+  hlg.hdr.alternative_transfer.present = true;
+  hlg.hdr.alternative_transfer.preferred_transfer_characteristics = 18;
+  CHECK(bs::formatHdrSummary(hlg.hdr, colour).find("HLG") == 0);
+
+  bs::SeiInfo hevc;
+  bs::parseSei(rbsp, nullptr, true, hevc);
+  CHECK_EQ(hevc.messages.size(), 4u);
+  CHECK(hevc.hdr.mastering_display.present);
+  CHECK_EQ(hevc.hdr.mastering_display.primaries_x[2], 34000);
+
+  std::vector<bs::SyntaxNode> roots;
+  bs::SyntaxBuilder builder(roots);
+  bs::SeiInfo tree_info;
+  bs::parseSei(rbsp, &builder, false, tree_info);
+  const bs::SyntaxNode* primaries = findNode(roots, "display_primaries_x[0]");
+  CHECK(primaries != nullptr);
+  if (primaries) {
+    CHECK_EQ(primaries->bit_pos, 16u);
+    CHECK_EQ(primaries->bit_len, 16u);
+  }
+}
+
 // The frame struct does not carry dimensions; the SPS does.
 void testStreamDetails() {
   const auto h264 = withStartCode(
@@ -488,6 +623,7 @@ int main() {
   testNalSplitter();
   testH264ParameterSets();
   testH265ParameterSets();
+  testSeiHdr();
   testStreamDetails();
   testMalformedInput();
 

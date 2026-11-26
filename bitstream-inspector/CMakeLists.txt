@@ -10,6 +10,7 @@ add_library(bs_core STATIC
     src/core/syntax.cpp
     src/core/fieldreader.cpp
     src/core/nal.cpp
+    src/core/sei.cpp
     src/core/h264.cpp
     src/core/h265.cpp
     src/core/stream.cpp

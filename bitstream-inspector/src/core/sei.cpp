@@ -1,0 +1,592 @@
+#include "core/sei.h"
+
+#include <cstdio>
+
+#include "core/fieldreader.h"
+
+namespace bs {
+
+namespace {
+
+const char* h264PayloadName(uint32_t type) {
+  switch (type) {
+    case 0:
+      return "buffering_period";
+    case 1:
+      return "pic_timing";
+    case 2:
+      return "pan_scan_rect";
+    case 3:
+      return "filler_payload";
+    case 4:
+      return "user_data_registered_itu_t_t35";
+    case 5:
+      return "user_data_unregistered";
+    case 6:
+      return "recovery_point";
+    case 7:
+      return "dec_ref_pic_marking_repetition";
+    case 8:
+      return "spare";
+    case 9:
+      return "scene_info";
+    case 10:
+      return "sub_seq_info";
+    case 11:
+      return "sub_seq_layer_characteristics";
+    case 12:
+      return "sub_seq_characteristics";
+    case 13:
+      return "full_frame_freeze";
+    case 14:
+      return "full_frame_freeze_release";
+    case 15:
+      return "full_frame_snapshot";
+    case 16:
+      return "progressive_refinement_segment_start";
+    case 17:
+      return "progressive_refinement_segment_end";
+    case 18:
+      return "motion_constrained_slice_group_set";
+    case 19:
+      return "film_grain_characteristics";
+    case 20:
+      return "deblocking_filter_display_preference";
+    case 21:
+      return "stereo_video_info";
+    case 22:
+      return "post_filter_hint";
+    case 23:
+      return "tone_mapping_info";
+    case 24:
+      return "scalability_info";
+    case 25:
+      return "sub_pic_scalable_layer";
+    case 26:
+      return "non_required_layer_rep";
+    case 27:
+      return "priority_layer_info";
+    case 28:
+      return "layers_not_present";
+    case 29:
+      return "layer_dependency_change";
+    case 30:
+      return "scalable_nesting";
+    case 31:
+      return "base_layer_temporal_hrd";
+    case 32:
+      return "quality_layer_integrity_check";
+    case 33:
+      return "redundant_pic_property";
+    case 34:
+      return "tl0_dep_rep_index";
+    case 35:
+      return "tl_switching_point";
+    case 36:
+      return "parallel_decoding_info";
+    case 37:
+      return "mvc_scalable_nesting";
+    case 38:
+      return "view_scalability_info";
+    case 39:
+      return "multiview_scene_info";
+    case 40:
+      return "multiview_acquisition_info";
+    case 41:
+      return "non_required_view_component";
+    case 42:
+      return "view_dependency_change";
+    case 43:
+      return "operation_points_not_present";
+    case 44:
+      return "base_view_temporal_hrd";
+    case 45:
+      return "frame_packing_arrangement";
+    case 46:
+      return "multiview_view_position";
+    case 47:
+      return "display_orientation";
+    case 48:
+      return "mvcd_scalable_nesting";
+    case 49:
+      return "mvcd_view_scalability_info";
+    case 50:
+      return "depth_representation_info";
+    case 51:
+      return "three_dimensional_reference_displays_info";
+    case 52:
+      return "depth_timing";
+    case 53:
+      return "depth_sampling_info";
+    case 54:
+      return "constrained_depth_parameter_set_identifier";
+    case 56:
+      return "green_metadata";
+    case 137:
+      return "mastering_display_colour_volume";
+    case 142:
+      return "colour_remapping_info";
+    case 144:
+      return "content_light_level_info";
+    case 147:
+      return "alternative_transfer_characteristics";
+    case 148:
+      return "ambient_viewing_environment";
+    default:
+      return "reserved";
+  }
+}
+
+const char* h265PayloadName(uint32_t type) {
+  switch (type) {
+    case 0:
+      return "buffering_period";
+    case 1:
+      return "pic_timing";
+    case 2:
+      return "pan_scan_rect";
+    case 3:
+      return "filler_payload";
+    case 4:
+      return "user_data_registered_itu_t_t35";
+    case 5:
+      return "user_data_unregistered";
+    case 6:
+      return "recovery_point";
+    case 45:
+      return "frame_packing_arrangement";
+    case 46:
+      return "multiview_view_position";
+    case 47:
+      return "display_orientation";
+    case 128:
+      return "structure_of_pictures_info";
+    case 129:
+      return "active_parameter_sets";
+    case 130:
+      return "decoding_unit_info";
+    case 131:
+      return "temporal_sub_layer_zero_idx";
+    case 132:
+      return "decoded_picture_hash";
+    case 133:
+      return "scalable_nesting";
+    case 134:
+      return "region_refresh_info";
+    case 135:
+      return "no_display";
+    case 136:
+      return "time_code";
+    case 137:
+      return "mastering_display_colour_volume";
+    case 138:
+      return "segmented_rect_frame_packing_arrangement";
+    case 139:
+      return "temporal_motion_constrained_tile_sets";
+    case 140:
+      return "chroma_resampling_filter_hint";
+    case 141:
+      return "knee_function_info";
+    case 142:
+      return "colour_remapping_info";
+    case 143:
+      return "deinterlaced_field_identification";
+    case 144:
+      return "content_light_level_info";
+    case 145:
+      return "dependent_rap_indication";
+    case 146:
+      return "coded_region_completion";
+    case 147:
+      return "alternative_transfer_characteristics";
+    case 148:
+      return "ambient_viewing_environment";
+    case 149:
+      return "content_colour_volume";
+    case 150:
+      return "equirectangular_projection";
+    case 151:
+      return "cubemap_projection";
+    case 152:
+      return "fisheye_video_info";
+    case 154:
+      return "sphere_rotation";
+    case 155:
+      return "regionwise_packing";
+    case 156:
+      return "omni_viewport";
+    case 157:
+      return "regional_nesting";
+    case 158:
+      return "mcts_extraction_info_sets";
+    case 159:
+      return "mcts_extraction_info_nesting";
+    case 160:
+      return "layers_not_present";
+    case 161:
+      return "inter_layer_constrained_tile_sets";
+    case 162:
+      return "bsp_nesting";
+    case 163:
+      return "bsp_initial_arrival_time";
+    case 164:
+      return "sub_bitstream_property";
+    case 165:
+      return "alpha_channel_info";
+    case 166:
+      return "overlay_info";
+    case 167:
+      return "temporal_mv_prediction_constraints";
+    case 168:
+      return "frame_field_info";
+    case 176:
+      return "three_dimensional_reference_displays_info";
+    case 177:
+      return "depth_representation_info";
+    case 178:
+      return "multiview_scene_info";
+    case 179:
+      return "multiview_acquisition_info";
+    case 180:
+      return "multiview_view_position";
+    case 181:
+      return "alternative_depth_info";
+    case 200:
+      return "sei_manifest";
+    case 201:
+      return "sei_prefix_indication";
+    case 202:
+      return "annotated_regions";
+    case 203:
+      return "subpic_level_info";
+    case 204:
+      return "sample_aspect_ratio_info";
+    default:
+      return "reserved";
+  }
+}
+
+const char* primariesName(int value) {
+  switch (value) {
+    case 1:
+      return "BT.709";
+    case 9:
+      return "BT.2020";
+    case 12:
+      return "ST 2113";
+    default:
+      return nullptr;
+  }
+}
+
+const char* transferName(int value) {
+  switch (value) {
+    case 1:
+      return "BT.709";
+    case 14:
+      return "BT.2020 10-bit";
+    case 16:
+      return "PQ";
+    case 18:
+      return "HLG";
+    default:
+      return nullptr;
+  }
+}
+
+const char* matrixName(int value) {
+  switch (value) {
+    case 1:
+      return "BT.709";
+    case 9:
+      return "BT.2020 NCL";
+    default:
+      return nullptr;
+  }
+}
+
+void parseMasteringDisplay(FieldReader& r, uint32_t size, SeiInfo& out) {
+  if (size < 24) {
+    r.error("mastering display payload too short");
+    return;
+  }
+  SeiMasteringDisplay md;
+  for (int i = 0; i < 3; i++) {
+    std::string x = "display_primaries_x[" + std::to_string(i) + "]";
+    std::string y = "display_primaries_y[" + std::to_string(i) + "]";
+    md.primaries_x[i] = static_cast<uint16_t>(r.u(16, x.c_str()));
+    md.primaries_y[i] = static_cast<uint16_t>(r.u(16, y.c_str()));
+  }
+  md.white_point_x = static_cast<uint16_t>(r.u(16, "white_point_x"));
+  md.white_point_y = static_cast<uint16_t>(r.u(16, "white_point_y"));
+  md.max_luminance = r.u(32, "max_display_mastering_luminance");
+  md.min_luminance = r.u(32, "min_display_mastering_luminance");
+  if (r.fail()) return;
+  md.present = true;
+  out.hdr.mastering_display = md;
+}
+
+void parseContentLightLevel(FieldReader& r, uint32_t size, SeiInfo& out) {
+  if (size < 4) {
+    r.error("content light level payload too short");
+    return;
+  }
+  SeiContentLightLevel cll;
+  cll.max_cll = static_cast<uint16_t>(r.u(16, "max_content_light_level"));
+  cll.max_fall = static_cast<uint16_t>(r.u(16, "max_pic_average_light_level"));
+  if (r.fail()) return;
+  cll.present = true;
+  out.hdr.content_light_level = cll;
+}
+
+void parseAlternativeTransfer(FieldReader& r, uint32_t size, SeiInfo& out) {
+  if (size < 1) {
+    r.error("alternative transfer payload too short");
+    return;
+  }
+  SeiAlternativeTransfer atc;
+  atc.preferred_transfer_characteristics =
+      static_cast<uint8_t>(r.u(8, "preferred_transfer_characteristics"));
+  if (r.fail()) return;
+  atc.present = true;
+  out.hdr.alternative_transfer = atc;
+}
+
+void parseRecoveryPoint(FieldReader& r, bool hevc) {
+  if (hevc) {
+    r.ue("recovery_poc_cnt");
+  } else {
+    r.ue("recovery_frame_cnt");
+  }
+  bool exact = false;
+  bool broken = false;
+  r.flag("exact_match_flag", exact);
+  r.flag("broken_link_flag", broken);
+  if (!hevc) r.u(2, "changing_slice_group_idc");
+}
+
+void parseRegisteredUserData(FieldReader& r, uint32_t size, SeiInfo& out) {
+  if (size < 1) return;
+  uint32_t country = r.u(8, "itu_t_t35_country_code");
+  if (country == 0xFF) {
+    r.u(8, "itu_t_t35_country_code_extension_byte");
+    return;
+  }
+  if (r.br().bits_left() < 16) return;
+  uint32_t provider = r.u(16, "itu_t_t35_terminal_provider_code");
+  if (r.br().bits_left() >= 16) {
+    r.u(16, "itu_t_t35_terminal_provider_oriented_code");
+  }
+  if (country == 0xB5 && provider == 0x003C) out.hdr.hdr10_plus = true;
+  if (country == 0xB5 && provider == 0x003B) out.hdr.dolby_vision = true;
+}
+
+void parseUnregisteredUserData(FieldReader& r, uint32_t size) {
+  if (size < 16) return;
+  uint64_t start = r.br().pos();
+  std::string uuid;
+  char hex[4];
+  for (int i = 0; i < 16; i++) {
+    std::snprintf(hex, sizeof(hex), "%02x", r.uu(8));
+    uuid += hex;
+  }
+  if (r.sb()) r.sb()->add("uuid_iso_iec_11578", uuid, start, 128);
+}
+
+void parseActiveParameterSets(FieldReader& r) {
+  uint32_t count = r.ue("num_sps_ids_minus1");
+  if (count > 63) {
+    r.error("num_sps_ids_minus1 out of range");
+    return;
+  }
+  for (uint32_t i = 0; i <= count && !r.fail(); i++) {
+    std::string name = "active_seq_parameter_set_id[" + std::to_string(i) + "]";
+    r.ue(name.c_str());
+  }
+}
+
+void parseSeiPayload(FieldReader& r, uint32_t type, uint32_t size, bool hevc,
+                     SeiInfo& out) {
+  switch (type) {
+    case 0:
+      // The remainder needs the active SPS HRD parameters; the HRD issue
+      // extends this once those are stored.
+      if (hevc)
+        r.ue("sps_seq_parameter_set_id");
+      else
+        r.ue("seq_parameter_set_id");
+      break;
+    case 4:
+      parseRegisteredUserData(r, size, out);
+      break;
+    case 5:
+      parseUnregisteredUserData(r, size);
+      break;
+    case 6:
+      parseRecoveryPoint(r, hevc);
+      break;
+    case 129:
+      if (hevc) parseActiveParameterSets(r);
+      break;
+    case 137:
+      parseMasteringDisplay(r, size, out);
+      break;
+    case 144:
+      parseContentLightLevel(r, size, out);
+      break;
+    case 147:
+      parseAlternativeTransfer(r, size, out);
+      break;
+    default:
+      break;
+  }
+}
+
+}  // namespace
+
+void parseSei(const Rbsp& rbsp, SyntaxBuilder* sb, bool hevc, SeiInfo& out) {
+  out = SeiInfo();
+  BitReader br(rbsp.data.data(), rbsp.data.size());
+  Section s(sb, "sei_rbsp");
+  int count = 0;
+  while (br.more_rbsp_data() && !br.fail() && count < 64) {
+    uint64_t type_pos = br.pos();
+    uint32_t payload_type = 0;
+    while (br.pos() < rbsp.data.size() * 8) {
+      uint32_t b = br.u(8);
+      payload_type += b;
+      if (b != 255) break;
+    }
+    uint64_t size_pos = br.pos();
+    uint32_t payload_size = 0;
+    while (br.pos() < rbsp.data.size() * 8) {
+      uint32_t b = br.u(8);
+      payload_size += b;
+      if (b != 255) break;
+    }
+    if (br.fail()) break;
+    uint64_t payload_start = br.pos();
+    Section p(sb, ("sei_message[" + std::to_string(count) + "]").c_str());
+    const char* name = seiPayloadName(payload_type, hevc);
+    if (sb) {
+      sb->addUInt("payloadType", payload_type, type_pos, size_pos - type_pos);
+      sb->add("  meaning", name, type_pos, 0);
+      sb->addUInt("payloadSize", payload_size, size_pos,
+                  payload_start - size_pos);
+    }
+    SeiMessage message;
+    message.payload_type = payload_type;
+    message.payload_size = payload_size;
+    message.bit_pos = payload_start;
+    message.name = name;
+    out.messages.push_back(message);
+    out.parsed = true;
+
+    if (payload_size > br.bits_left() / 8) {
+      if (sb) sb->addError("payload size exceeds remaining data");
+      break;
+    }
+    if (payload_size > 0) {
+      if (payload_start % 8 != 0) {
+        if (sb) sb->addError("SEI payload is not byte aligned");
+      } else {
+        BitReader payload_br(rbsp.data.data() + payload_start / 8,
+                             payload_size);
+        FieldReader pr(payload_br, sb, payload_start);
+        parseSeiPayload(pr, payload_type, payload_size, hevc, out);
+        if (payload_br.fail()) {
+          if (sb) sb->addError("SEI payload parse failed");
+        }
+        uint64_t used = payload_br.pos();
+        uint64_t payload_bits = static_cast<uint64_t>(payload_size) * 8;
+        if (sb && used < payload_bits) {
+          sb->add("  payload",
+                  "(" + std::to_string((payload_bits - used) / 8) + " bytes)",
+                  payload_start + used, payload_bits - used);
+        }
+      }
+    }
+    br.skip(static_cast<uint32_t>(payload_size) * 8);
+    count++;
+  }
+}
+
+const char* seiPayloadName(uint32_t type, bool hevc) {
+  return hevc ? h265PayloadName(type) : h264PayloadName(type);
+}
+
+std::string seiSummary(const SeiInfo& info) {
+  std::string summary;
+  for (const auto& message : info.messages) {
+    if (!summary.empty()) summary += ", ";
+    summary += message.name;
+  }
+  return summary;
+}
+
+void mergeSeiHdr(SeiHdrInfo& dst, const SeiHdrInfo& src) {
+  if (src.mastering_display.present)
+    dst.mastering_display = src.mastering_display;
+  if (src.content_light_level.present)
+    dst.content_light_level = src.content_light_level;
+  if (src.alternative_transfer.present)
+    dst.alternative_transfer = src.alternative_transfer;
+  dst.hdr10_plus = dst.hdr10_plus || src.hdr10_plus;
+  dst.dolby_vision = dst.dolby_vision || src.dolby_vision;
+}
+
+std::string formatHdrSummary(const SeiHdrInfo& sei,
+                             const ColourDescription& colour) {
+  const SeiMasteringDisplay& md = sei.mastering_display;
+  const SeiContentLightLevel& cll = sei.content_light_level;
+  int transfer =
+      sei.alternative_transfer.present
+          ? sei.alternative_transfer.preferred_transfer_characteristics
+          : colour.transfer;
+  bool hlg = transfer == 18;
+  bool hdr10 = md.present || cll.present || transfer == 16;
+  if (!hlg && !hdr10 && !sei.hdr10_plus && !sei.dolby_vision) return "";
+
+  std::string text;
+  if (sei.dolby_vision)
+    text = "Dolby Vision";
+  else if (sei.hdr10_plus)
+    text = "HDR10+";
+  else if (hlg)
+    text = "HLG";
+  else
+    text = "HDR10";
+
+  std::string detail;
+  const char* primaries =
+      colour.present ? primariesName(colour.primaries) : nullptr;
+  const char* transfer_name = transferName(transfer);
+  const char* matrix = colour.present ? matrixName(colour.matrix) : nullptr;
+  if (primaries) detail = primaries;
+  if (transfer_name) {
+    if (!detail.empty()) detail += "/";
+    detail += transfer_name;
+  }
+  if (matrix) {
+    if (!detail.empty()) detail += "/";
+    detail += matrix;
+  }
+  if (!detail.empty()) text += " (" + detail + ")";
+
+  char buf[96];
+  if (md.present) {
+    std::snprintf(buf, sizeof(buf), " %.0f/%.4f nits",
+                  static_cast<double>(md.max_luminance) / 10000.0,
+                  static_cast<double>(md.min_luminance) / 10000.0);
+    text += buf;
+  }
+  if (cll.present) {
+    std::snprintf(buf, sizeof(buf), " MaxCLL %u/%u",
+                  static_cast<unsigned>(cll.max_cll),
+                  static_cast<unsigned>(cll.max_fall));
+    text += buf;
+  }
+  return text;
+}
+
+}  // namespace bs

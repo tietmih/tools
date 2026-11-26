@@ -286,13 +286,16 @@ void parseH265Vui(FieldReader& r, H265Sps& sps) {
   r.flag("video_signal_type_present_flag", video_signal);
   if (video_signal) {
     r.u(3, "video_format");
-    r.u(1, "video_full_range_flag");
+    uint32_t full_range = r.u(1, "video_full_range_flag");
+    sps.video_full_range = full_range != 0;
     bool colour = false;
     r.flag("colour_description_present_flag", colour);
     if (colour) {
-      r.u(8, "colour_primaries");
-      r.u(8, "transfer_characteristics");
-      r.u(8, "matrix_coeffs");
+      sps.colour_description_present = true;
+      sps.colour_primaries = static_cast<int>(r.u(8, "colour_primaries"));
+      sps.transfer_characteristics =
+          static_cast<int>(r.u(8, "transfer_characteristics"));
+      sps.matrix_coefficients = static_cast<int>(r.u(8, "matrix_coeffs"));
     }
   }
   bool chroma_loc = false;

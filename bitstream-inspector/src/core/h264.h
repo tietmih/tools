@@ -71,6 +71,10 @@ struct H264Sps {
   bool frame_cropping_vui = false;
   int video_format = 5;
   bool video_full_range = false;
+  bool colour_description_present = false;
+  int colour_primaries = 2;
+  int transfer_characteristics = 2;
+  int matrix_coefficients = 2;
   bool chroma_loc_info_present = false;
   uint32_t num_reorder_frames = 0;
   uint32_t max_dec_frame_buffering = 0;
@@ -160,7 +164,6 @@ struct H264State {
 void parseH264Sps(BitReader& br, SyntaxBuilder* b, H264Sps& out);
 void parseH264Pps(BitReader& br, SyntaxBuilder* b, H264Pps& out,
                   const H264Sps* sps);
-void parseH264Sei(const Rbsp& rbsp, SyntaxBuilder* b, std::string& summary);
 // Returns header bits consumed; fills info. Uses state's sps/pps.
 void parseH264SliceHeader(BitReader& br, SyntaxBuilder* b, H264State& state,
                           H264SliceInfo& info, bool emit_poc = true);

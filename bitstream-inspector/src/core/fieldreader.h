@@ -11,7 +11,8 @@ namespace bs {
 // bit range, so the UI can highlight the corresponding bytes.
 class FieldReader {
  public:
-  FieldReader(BitReader& br, SyntaxBuilder* sb) : br_(br), sb_(sb) {}
+  FieldReader(BitReader& br, SyntaxBuilder* sb, uint64_t bit_base = 0)
+      : br_(br), sb_(sb), bit_base_(bit_base) {}
 
   uint32_t u(int n, const char* name);
   uint32_t ue(const char* name);
@@ -34,6 +35,7 @@ class FieldReader {
  private:
   BitReader& br_;
   SyntaxBuilder* sb_;
+  uint64_t bit_base_ = 0;
 };
 
 // Opens a named group in the tree and guarantees a matching close. Passing a

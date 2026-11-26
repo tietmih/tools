@@ -264,6 +264,8 @@ std::wstring streamSummaryText() {
       }
     }
   }
+  std::string hdr = stream.hdrSummary();
+  if (!hdr.empty()) text += L" | " + wide(hdr);
   text += L" | " + std::to_wstring(stream.nals().size()) +
           tr(L" NAL, ", L" NAL，") + std::to_wstring(stream.frames().size()) +
           tr(L" frames", L" 帧");

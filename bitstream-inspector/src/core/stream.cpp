@@ -131,6 +131,7 @@ bool Stream::loadBuffer(std::vector<uint8_t> data, std::string& error) {
   frames_.clear();
   h264_ = H264State();
   h265_ = H265State();
+  hdr_ = SeiHdrInfo();
   h264_sps_versions_.clear();
   h264_pps_versions_.clear();
   h264_sps_hashes_.clear();
@@ -390,9 +391,10 @@ void Stream::analyzeH264(std::string& error) {
       }
     } else if (type == 6) {
       rbsp = unescapeRbsp(p + 1, n.size - 1);
-      std::string sei;
-      parseH264Sei(rbsp, nullptr, sei);
-      e.summary = "SEI: " + sei;
+      parseSei(rbsp, nullptr, false, e.sei);
+      e.summary = "SEI";
+      if (!e.sei.messages.empty()) e.summary += ": " + seiSummary(e.sei);
+      mergeSeiHdr(hdr_, e.sei.hdr);
     } else if (type == 9) {
       e.summary = "access unit delimiter";
     } else if (type == 12) {
@@ -558,10 +560,12 @@ void Stream::analyzeH265(std::string& error) {
       e.summary = "end of bitstream";
     } else if (type == 38) {
       e.summary = "filler data";
-    } else if (type == 39) {
-      e.summary = "prefix SEI";
-    } else if (type == 40) {
-      e.summary = "suffix SEI";
+    } else if (type == 39 || type == 40) {
+      rbsp = unescapeRbsp(p + 2, n.size - 2);
+      parseSei(rbsp, nullptr, true, e.sei);
+      e.summary = type == 39 ? "prefix SEI" : "suffix SEI";
+      if (!e.sei.messages.empty()) e.summary += ": " + seiSummary(e.sei);
+      mergeSeiHdr(hdr_, e.sei.hdr);
     }
     nals_.push_back(std::move(e));
   }
@@ -602,8 +606,8 @@ std::vector<SyntaxNode> Stream::syntaxTree(size_t nal_index) const {
         sps = &h264_.sps;
       parseH264Pps(br, &sb, pps, sps);
     } else if (type == 6) {
-      std::string summary;
-      parseH264Sei(rbsp, &sb, summary);
+      SeiInfo info;
+      parseSei(rbsp, &sb, false, info);
     } else if (type == 9) {
       Section sec(&sb, "access_unit_delimiter_rbsp");
       uint64_t aud_pos = br.pos();
@@ -646,6 +650,9 @@ std::vector<SyntaxNode> Stream::syntaxTree(size_t nal_index) const {
       uint64_t aud_pos = br.pos();
       uint32_t v = br.u(3);
       sb.addUInt("pic_type", v, aud_pos, 3);
+    } else if (type == 39 || type == 40) {
+      SeiInfo info;
+      parseSei(rbsp, &sb, true, info);
     } else if (type <= 31) {
       H265State state = h265_;
       if (e.sps_version >= 0 &&
@@ -794,6 +801,22 @@ bool Stream::mapBitRange(size_t nal_index, uint64_t bit_pos, uint64_t bit_len,
   return true;
 }
 
+std::string Stream::hdrSummary() const {
+  ColourDescription colour;
+  if (codec_ == Codec::H264 && h264_.have_sps) {
+    colour.present = h264_.sps.colour_description_present;
+    colour.primaries = h264_.sps.colour_primaries;
+    colour.transfer = h264_.sps.transfer_characteristics;
+    colour.matrix = h264_.sps.matrix_coefficients;
+  } else if (codec_ == Codec::H265 && h265_.have_sps) {
+    colour.present = h265_.sps.colour_description_present;
+    colour.primaries = h265_.sps.colour_primaries;
+    colour.transfer = h265_.sps.transfer_characteristics;
+    colour.matrix = h265_.sps.matrix_coefficients;
+  }
+  return formatHdrSummary(hdr_, colour);
+}
+
 std::string Stream::streamSummary() const {
   if (codec_ == Codec::Unknown) return "no stream";
   std::string s = codecName(codec_);
@@ -812,6 +835,8 @@ std::string Stream::streamSummary() const {
     double fps = sps.fps();
     if (fps > 0) s += fmt(" | %.3f fps", fps);
   }
+  std::string hdr = hdrSummary();
+  if (!hdr.empty()) s += " | " + hdr;
   s += fmt(" | %zu NAL, %zu frames", nals_.size(), frames_.size());
   return s;
 }
