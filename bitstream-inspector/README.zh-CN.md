@@ -49,7 +49,8 @@ Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表�
 - **参考帧**：Refs 标签页列出当前帧的 L0/L1 POC、DPB 数量和缺失参考；双击参考
   帧可跳转。
 - **合规检查**：View 菜单按信令的 H.264/H.265 level 检查图像大小、MB/CTB 速率、
-  DPB 和平均码率。
+  DPB 和平均码率，并检查 HDR 元数据一致性（MaxCLL/MaxFALL 与主控显示、
+  HDR10+ 与 PQ）。
 - **YUV 查看器**：File > YUV 查看器可独立打开 raw planar YUV，支持
   I420/I422/I444/P010/P210/P012/P212、矩阵/范围选择和逐帧导航。
 - **质量**：File > 加载参考 YUV 后计算当前码流的逐帧 PSNR/SSIM/MSE/MSAD；质量图表和
@@ -210,6 +211,7 @@ bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
 bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB 占用模型
 bsinfo stream.h264 --bits --csv-bits b.csv  # 逐 AU 比特分配
 bsinfo stream.h264 --conformance       # Annex A 限制检查
+bsinfo stream.h264 --hdr               # HDR 元数据摘要/一致性
 bsinfo stream.h264 --json             # 机器可读输出
 bsinfo --batch vectors/               # 目录的 JSON 数组
 ```
@@ -267,8 +269,8 @@ mtest stream.h264 --ref ref.yuv --quality  # 逐帧 PSNR/SSIM
 - 容器输入的 `偏移` 列是重构后的 Annex B 流内偏移，不是容器文件偏移。
 - 10/12-bit 预览的 RGB 转换可能与 FFmpeg CLI 相差几个等级；解码正确性用有界
   像素容差检查。
-- SEI 详细解析覆盖 HDR（MDCV/CLL/ATC）、recovery point、T.35 和用户数据；其他
-  payload 只列出类型。
+- SEI 详细解析覆盖 HDR（MDCV/CLL/ATC）、HDR10+ 识别、recovery point、T.35 和
+  用户数据；HDR10+ 动态窗口元数据未解码，其他 payload 只列出类型。
 - 多 PPS 流在多个 PPS id 之间切换时，使用最近一次激活的参数集解析。
 
 ## 目录结构

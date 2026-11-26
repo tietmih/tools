@@ -385,6 +385,15 @@ void showConformance() {
     for (const auto& issue : issues)
       text += wide(issue.code) + L": " + wide(issue.message) + L"\n";
   }
+  std::vector<std::string> hdr_notes;
+  const bool hdr_ok = g_app.stream.hdrConsistency(hdr_notes);
+  text += L"\n";
+  if (hdr_ok) {
+    text += tr(L"HDR metadata is consistent.", L"HDR 元数据一致。");
+  } else {
+    text += tr(L"HDR metadata issues:", L"HDR 元数据问题：");
+    for (const auto& note : hdr_notes) text += L"\n  " + wide(note);
+  }
   MessageBoxW(g_app.hwnd, text.c_str(), tr(L"Conformance Report", L"合规检查"),
               MB_OK | (issues.empty() ? MB_ICONINFORMATION : MB_ICONWARNING));
 }

@@ -170,7 +170,7 @@ int main(int argc, char** argv) {
                  "usage: bsinfo <file.h264|file.h265> [--frames] [--tree "
                  "<nal-index>] [--cpb] [--refs] [--json] [--batch <dir>] "
                  "[--csv-cpb <path>] [--bits] [--csv-bits <path>] "
-                 "[--overlay] [--conformance]\n");
+                 "[--overlay] [--conformance] [--hdr]\n");
     return 2;
   }
   Stream s;
@@ -185,6 +185,7 @@ int main(int argc, char** argv) {
   bool showBits = false;
   bool showOverlay = false;
   bool showConformance = false;
+  bool showHdr = false;
   bool json = false;
   long treeIndex = -1;
   const char* csvFrames = nullptr;
@@ -210,6 +211,8 @@ int main(int argc, char** argv) {
       showOverlay = true;
     else if (std::strcmp(argv[i], "--conformance") == 0)
       showConformance = true;
+    else if (std::strcmp(argv[i], "--hdr") == 0)
+      showHdr = true;
     else if (std::strcmp(argv[i], "--bits") == 0)
       showBits = true;
     else if (std::strcmp(argv[i], "--csv-bits") == 0 && i + 1 < argc)
@@ -243,6 +246,15 @@ int main(int argc, char** argv) {
   if (csvNals) writeCsv(csvNals, s.nalsCsv());
   if (csvCpb) writeCsv(csvCpb, s.cpbCsv());
   if (csvBits) writeCsv(csvBits, s.bitAllocationCsv());
+
+  if (showHdr) {
+    std::vector<std::string> notes;
+    const bool consistent = s.hdrConsistency(notes);
+    std::printf("hdr summary=%s\n", s.hdrSummary().c_str());
+    std::printf("hdr consistent=%d notes=%zu\n", consistent ? 1 : 0,
+                notes.size());
+    for (const auto& note : notes) std::printf("hdr note=%s\n", note.c_str());
+  }
 
   if (showConformance) {
     const uint64_t bitrate = s.frames().empty()
@@ -334,7 +346,7 @@ int main(int argc, char** argv) {
   }
 
   if (treeIndex < 0 && !showFrames && !showCpb && !showRefs && !showBits &&
-      !showOverlay && !showConformance) {
+      !showOverlay && !showConformance && !showHdr) {
     for (size_t i = 0; i < s.nals().size(); i++) {
       const NalEntry& e = s.nals()[i];
       std::printf("[%4zu] off=%-9zu size=%-7zu type=%-3d %-32s %s%s%s\n", i,

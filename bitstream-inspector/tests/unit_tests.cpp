@@ -691,6 +691,31 @@ void testSeiHrdPayloads() {
   CHECK_EQ(pt_info.pic_timing.dpb_output_delay, 4u);
 }
 
+void testHdr10Plus() {
+  // T.35: US country code, Samsung provider, ST 2094-40, application 4.
+  const std::vector<uint8_t> payload = {0xB5, 0x00, 0x3C, 0x00,
+                                        0x01, 0x04, 0x01};
+  std::vector<uint8_t> bytes = seiMessage(4, payload);
+  bytes.push_back(0x80);
+  bs::Rbsp rbsp;
+  rbsp.data = bytes;
+  bs::SeiInfo info;
+  bs::parseSei(rbsp, nullptr, false, info);
+  CHECK(info.hdr.hdr10_plus);
+  CHECK(!info.hdr.dolby_vision);
+  CHECK_EQ(info.hdr.hdr10_plus_application_version, 1);
+
+  bs::SeiHdrInfo merged;
+  bs::mergeSeiHdr(merged, info.hdr);
+  CHECK(merged.hdr10_plus);
+  CHECK_EQ(merged.hdr10_plus_application_version, 1);
+
+  bs::ColourDescription colour;
+  colour.present = true;
+  colour.transfer = 18;
+  CHECK_EQ(bs::formatHdrSummary(merged, colour), std::string("HDR10+ (HLG)"));
+}
+
 void testDiffImage() {
   const uint8_t a[4] = {10, 20, 30, 40};
   const uint8_t b[4] = {10, 18, 30, 0};
@@ -819,6 +844,7 @@ int main() {
   testHrdCpb();
   testSeiHrdPayloads();
   testConformance();
+  testHdr10Plus();
   testDiffImage();
   testStreamDetails();
   testMalformedInput();

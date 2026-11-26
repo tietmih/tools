@@ -37,6 +37,10 @@ struct SeiHdrInfo {
   SeiAlternativeTransfer alternative_transfer;
   bool hdr10_plus = false;
   bool dolby_vision = false;
+  int hdr10_plus_itm = 0;     // targeted system display max, nits
+  int hdr10_plus_maxscl = 0;  // max scene content light level
+  int hdr10_plus_average_maxrgb = 0;
+  int hdr10_plus_application_version = 0;
 };
 
 struct SeiMessage {

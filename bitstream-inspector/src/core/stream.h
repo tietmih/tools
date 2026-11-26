@@ -129,6 +129,7 @@ class Stream {
   ColourDescription colourDescription() const;
   bool videoFullRange() const;
   std::string hdrSummary() const;
+  bool hdrConsistency(std::vector<std::string>& notes) const;
   std::string cpbCsv() const;
   std::string bitAllocationCsv() const;
   double windowBitrate(int start_frame, int end_frame) const;

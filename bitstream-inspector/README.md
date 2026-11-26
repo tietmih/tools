@@ -56,7 +56,8 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
 - **References**: a Refs tab lists the selected frame's L0/L1 POCs, DPB count
   and missing references; double-clicking a reference jumps to that frame.
 - **Conformance**: a View menu report checks picture size, MB/CTB rate, DPB
-  and average bitrate against the signalled H.264/H.265 level.
+  and average bitrate against the signalled H.264/H.265 level, plus HDR
+  metadata consistency (MaxCLL/MaxFALL vs mastering display, HDR10+ vs PQ).
 - **YUV Viewer**: File > YUV Viewer opens a standalone raw planar YUV viewer
   with I420/I422/I444/P010/P210/P012/P212, matrix/range selection and frame
   navigation.
@@ -232,6 +233,7 @@ bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
 bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB occupancy model
 bsinfo stream.h264 --bits --csv-bits b.csv  # per-AU bit allocation
 bsinfo stream.h264 --conformance       # Annex A limit checks
+bsinfo stream.h264 --hdr               # HDR metadata summary/consistency
 bsinfo stream.h264 --json             # machine-readable output
 bsinfo --batch vectors/               # JSON array for a directory
 ```
@@ -292,8 +294,9 @@ containers.
   reconstructed Annex B stream, not the container file.
 - 10/12-bit preview RGB conversion can differ from the FFmpeg CLI by a few
   levels; decode correctness is checked with a bounded pixel tolerance.
-- SEI details cover HDR (MDCV/CLL/ATC), recovery point, T.35 and user data;
-  other payload types are listed by type.
+- SEI details cover HDR (MDCV/CLL/ATC), HDR10+ identification, recovery point,
+  T.35 and user data; HDR10+ dynamic window metadata is not decoded, and other
+  payload types are listed by type.
 - Multi-PPS streams that alternate between several PPS ids are parsed with the
   most recently activated state.
 

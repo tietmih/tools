@@ -1516,6 +1516,36 @@ bool Stream::videoFullRange() const {
   return false;
 }
 
+bool Stream::hdrConsistency(std::vector<std::string>& notes) const {
+  notes.clear();
+  const ColourDescription colour = colourDescription();
+  const SeiMasteringDisplay& md = hdr_.mastering_display;
+  const SeiContentLightLevel& cll = hdr_.content_light_level;
+  bool consistent = true;
+  if (cll.present && md.present) {
+    const int max_cll_nits = cll.max_cll;
+    const double md_max_nits = static_cast<double>(md.max_luminance) / 10000.0;
+    if (max_cll_nits > 0 && md_max_nits > 0.0 &&
+        max_cll_nits > md_max_nits + 1.0) {
+      notes.push_back("MaxCLL exceeds the mastering display maximum");
+      consistent = false;
+    }
+    if (cll.max_fall > cll.max_cll && cll.max_cll > 0) {
+      notes.push_back("MaxFALL exceeds MaxCLL");
+      consistent = false;
+    }
+  }
+  if (hdr_.hdr10_plus && colour.present && colour.transfer != 16) {
+    notes.push_back("HDR10+ metadata without a PQ transfer function");
+    consistent = false;
+  }
+  if (hdr_.hdr10_plus && !md.present) {
+    notes.push_back("HDR10+ metadata without mastering display metadata");
+    consistent = false;
+  }
+  return consistent;
+}
+
 std::string Stream::hdrSummary() const {
   return formatHdrSummary(hdr_, colourDescription());
 }

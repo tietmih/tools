@@ -375,10 +375,25 @@ void parseRegisteredUserData(FieldReader& r, uint32_t size, SeiInfo& out) {
   }
   if (r.br().bits_left() < 16) return;
   uint32_t provider = r.u(16, "itu_t_t35_terminal_provider_code");
+  uint32_t oriented = 0;
   if (r.br().bits_left() >= 16) {
-    r.u(16, "itu_t_t35_terminal_provider_oriented_code");
+    oriented = r.u(16, "itu_t_t35_terminal_provider_oriented_code");
   }
-  if (country == 0xB5 && provider == 0x003C) out.hdr.hdr10_plus = true;
+  if (country == 0xB5 && provider == 0x003C && oriented == 0x0001) {
+    out.hdr.hdr10_plus = true;
+    // HDR10+ (SMPTE ST 2094-40 over T.35) carries an application identifier
+    // and version before the window metadata. Only the identification header
+    // is decoded here; the dynamic window payload needs a full ST 2094-40
+    // parser and test vectors that are not available yet.
+    if (r.br().bits_left() >= 8) {
+      uint32_t app_id = r.u(8, "application_identifier");
+      if (app_id == 4 && r.br().bits_left() >= 8) {
+        out.hdr.hdr10_plus_application_version =
+            static_cast<int>(r.u(8, "application_version"));
+      }
+    }
+    return;
+  }
   if (country == 0xB5 && provider == 0x003B) out.hdr.dolby_vision = true;
 }
 
@@ -684,6 +699,12 @@ void mergeSeiHdr(SeiHdrInfo& dst, const SeiHdrInfo& src) {
     dst.alternative_transfer = src.alternative_transfer;
   dst.hdr10_plus = dst.hdr10_plus || src.hdr10_plus;
   dst.dolby_vision = dst.dolby_vision || src.dolby_vision;
+  if (src.hdr10_plus) {
+    dst.hdr10_plus_itm = src.hdr10_plus_itm;
+    dst.hdr10_plus_maxscl = src.hdr10_plus_maxscl;
+    dst.hdr10_plus_average_maxrgb = src.hdr10_plus_average_maxrgb;
+    dst.hdr10_plus_application_version = src.hdr10_plus_application_version;
+  }
 }
 
 std::string formatHdrSummary(const SeiHdrInfo& sei,
