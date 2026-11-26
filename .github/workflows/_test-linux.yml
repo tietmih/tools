@@ -113,6 +113,9 @@ jobs:
             ${{ inputs.tool }}/build-deps/vectors/*.ts
             ${{ inputs.tool }}/build-deps/vectors/*.m2ts
             ${{ inputs.tool }}/build-deps/vectors/*.mkv
+            ${{ inputs.tool }}/build-deps/vectors/*.avi
+            ${{ inputs.tool }}/build-deps/vectors/*.flv
+            ${{ inputs.tool }}/build-deps/vectors/*.mxf
             ${{ inputs.tool }}/build-deps/vectors/expected.json
             ${{ inputs.tool }}/build-deps/vectors/*.ref.ppm
           if-no-files-found: error
