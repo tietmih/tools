@@ -1,5 +1,6 @@
 #include "core/sei.h"
 
+#include <algorithm>
 #include <cstdio>
 
 #include "core/fieldreader.h"
@@ -405,16 +406,165 @@ void parseActiveParameterSets(FieldReader& r) {
   }
 }
 
+void parseBufferingPeriod264(FieldReader& r, const SeiHrdContext& ctx,
+                             SeiInfo& out) {
+  SeiBufferingPeriod bp;
+  bp.sps_id = static_cast<int>(r.ue("seq_parameter_set_id"));
+  const int bits = std::max(1, ctx.initial_cpb_removal_delay_length);
+  if (ctx.nal_hrd) {
+    for (int i = 0; i <= ctx.nal_cpb_cnt_minus1 && !r.fail(); i++) {
+      std::string delay =
+          "initial_cpb_removal_delay[" + std::to_string(i) + "]";
+      std::string offset =
+          "initial_cpb_removal_delay_offset[" + std::to_string(i) + "]";
+      bp.nal_initial_cpb_removal_delay.push_back(r.u(bits, delay.c_str()));
+      bp.nal_initial_cpb_removal_offset.push_back(r.u(bits, offset.c_str()));
+    }
+  }
+  if (ctx.vcl_hrd) {
+    for (int i = 0; i <= ctx.vcl_cpb_cnt_minus1 && !r.fail(); i++) {
+      std::string delay =
+          "vcl_initial_cpb_removal_delay[" + std::to_string(i) + "]";
+      std::string offset =
+          "vcl_initial_cpb_removal_offset[" + std::to_string(i) + "]";
+      bp.vcl_initial_cpb_removal_delay.push_back(r.u(bits, delay.c_str()));
+      bp.vcl_initial_cpb_removal_offset.push_back(r.u(bits, offset.c_str()));
+    }
+  }
+  if (r.fail()) return;
+  bp.present = true;
+  out.buffering_period = bp;
+}
+
+void parsePicTiming264(FieldReader& r, const SeiHrdContext& ctx, SeiInfo& out) {
+  SeiPicTiming pt;
+  if (ctx.nal_hrd || ctx.vcl_hrd) {
+    const int cpb_bits = std::max(1, ctx.cpb_removal_delay_length);
+    const int dpb_bits = std::max(1, ctx.dpb_output_delay_length);
+    pt.cpb_removal_delay = r.u(cpb_bits, "cpb_removal_delay");
+    pt.dpb_output_delay = r.u(dpb_bits, "dpb_output_delay");
+    pt.has_delays = true;
+  }
+  if (ctx.pic_struct_present) {
+    pt.pic_struct = r.u(4, "pic_struct");
+    pt.has_pic_struct = true;
+  }
+  if (r.fail()) return;
+  pt.present = true;
+  out.pic_timing = pt;
+}
+
+void parseBufferingPeriod265(FieldReader& r, const SeiHrdContext& ctx,
+                             SeiInfo& out) {
+  const H265Hrd* hrd = ctx.h265_hrd;
+  if (!hrd || hrd->sub_layers.empty()) return;
+  int tid = ctx.highest_tid;
+  if (tid < 0) tid = 0;
+  if (tid >= static_cast<int>(hrd->sub_layers.size()))
+    tid = static_cast<int>(hrd->sub_layers.size()) - 1;
+  const H265HrdSubLayer& sl = hrd->sub_layers[static_cast<size_t>(tid)];
+  const int cpb_cnt = static_cast<int>(sl.cpb_cnt_minus1) + 1;
+  const int init_bits = std::max(
+      1, static_cast<int>(hrd->initial_cpb_removal_delay_length_minus1) + 1);
+  const int au_bits = std::max(
+      1, static_cast<int>(hrd->au_cpb_removal_delay_length_minus1) + 1);
+  const int dpb_bits =
+      std::max(1, static_cast<int>(hrd->dpb_output_delay_length_minus1) + 1);
+
+  SeiBufferingPeriod bp;
+  bp.sps_id = static_cast<int>(r.ue("bp_seq_parameter_set_id"));
+  if (!hrd->sub_pic_hrd_params_present) {
+    r.flag("irap_cpb_params_present_flag", bp.irap_cpb_params_present);
+  }
+  if (bp.irap_cpb_params_present) {
+    bp.cpb_delay_offset = r.u(au_bits, "cpb_delay_offset");
+    bp.dpb_delay_offset = r.u(dpb_bits, "dpb_delay_offset");
+  }
+  r.flag("concatenation_flag", bp.concatenation_flag);
+  bp.au_cpb_removal_delay_delta_minus1 =
+      r.u(au_bits, "au_cpb_removal_delay_delta_minus1");
+  if (hrd->nal_hrd_present) {
+    for (int i = 0; i < cpb_cnt && !r.fail(); i++) {
+      std::string idx = std::to_string(i);
+      bp.nal_initial_cpb_removal_delay.push_back(r.u(
+          init_bits, ("nal_initial_cpb_removal_delay[" + idx + "]").c_str()));
+      bp.nal_initial_cpb_removal_offset.push_back(r.u(
+          init_bits, ("nal_initial_cpb_removal_offset[" + idx + "]").c_str()));
+      if (hrd->sub_pic_hrd_params_present || bp.irap_cpb_params_present) {
+        r.u(init_bits,
+            ("nal_initial_alt_cpb_removal_delay[" + idx + "]").c_str());
+        r.u(init_bits,
+            ("nal_initial_alt_cpb_removal_offset[" + idx + "]").c_str());
+      }
+    }
+  }
+  if (hrd->vcl_hrd_present) {
+    for (int i = 0; i < cpb_cnt && !r.fail(); i++) {
+      std::string idx = std::to_string(i);
+      bp.vcl_initial_cpb_removal_delay.push_back(r.u(
+          init_bits, ("vcl_initial_cpb_removal_delay[" + idx + "]").c_str()));
+      bp.vcl_initial_cpb_removal_offset.push_back(r.u(
+          init_bits, ("vcl_initial_cpb_removal_offset[" + idx + "]").c_str()));
+      if (hrd->sub_pic_hrd_params_present || bp.irap_cpb_params_present) {
+        r.u(init_bits,
+            ("vcl_initial_alt_cpb_removal_delay[" + idx + "]").c_str());
+        r.u(init_bits,
+            ("vcl_initial_alt_cpb_removal_offset[" + idx + "]").c_str());
+      }
+    }
+  }
+  if (r.fail()) return;
+  bp.present = true;
+  out.buffering_period = bp;
+}
+
+void parsePicTiming265(FieldReader& r, const SeiHrdContext& ctx, SeiInfo& out) {
+  const H265Hrd* hrd = ctx.h265_hrd;
+  if (!hrd) return;
+  SeiPicTiming pt;
+  if (ctx.frame_field_info_present) {
+    pt.pic_struct = r.u(4, "pic_struct");
+    r.u(2, "source_scan_type");
+    r.u(1, "duplicate_flag");
+    pt.has_pic_struct = true;
+  }
+  if (hrd->nal_hrd_present || hrd->vcl_hrd_present) {
+    const int au_bits = std::max(
+        1, static_cast<int>(hrd->au_cpb_removal_delay_length_minus1) + 1);
+    const int dpb_bits =
+        std::max(1, static_cast<int>(hrd->dpb_output_delay_length_minus1) + 1);
+    pt.au_cpb_removal_delay_minus1 =
+        r.u(au_bits, "au_cpb_removal_delay_minus1");
+    pt.pic_dpb_output_delay = r.u(dpb_bits, "pic_dpb_output_delay");
+    pt.has_delays = true;
+  }
+  if (r.fail()) return;
+  pt.present = true;
+  out.pic_timing = pt;
+}
+
 void parseSeiPayload(FieldReader& r, uint32_t type, uint32_t size, bool hevc,
-                     SeiInfo& out) {
+                     SeiInfo& out, const SeiHrdContext* ctx) {
   switch (type) {
     case 0:
-      // The remainder needs the active SPS HRD parameters; the HRD issue
-      // extends this once those are stored.
-      if (hevc)
+      if (ctx && ctx->has_sps) {
+        if (hevc)
+          parseBufferingPeriod265(r, *ctx, out);
+        else
+          parseBufferingPeriod264(r, *ctx, out);
+      } else if (hevc) {
         r.ue("sps_seq_parameter_set_id");
-      else
+      } else {
         r.ue("seq_parameter_set_id");
+      }
+      break;
+    case 1:
+      if (ctx && ctx->has_sps) {
+        if (hevc)
+          parsePicTiming265(r, *ctx, out);
+        else
+          parsePicTiming264(r, *ctx, out);
+      }
       break;
     case 4:
       parseRegisteredUserData(r, size, out);
@@ -444,7 +594,8 @@ void parseSeiPayload(FieldReader& r, uint32_t type, uint32_t size, bool hevc,
 
 }  // namespace
 
-void parseSei(const Rbsp& rbsp, SyntaxBuilder* sb, bool hevc, SeiInfo& out) {
+void parseSei(const Rbsp& rbsp, SyntaxBuilder* sb, bool hevc, SeiInfo& out,
+              const SeiHrdContext* ctx) {
   out = SeiInfo();
   BitReader br(rbsp.data.data(), rbsp.data.size());
   Section s(sb, "sei_rbsp");
@@ -493,7 +644,7 @@ void parseSei(const Rbsp& rbsp, SyntaxBuilder* sb, bool hevc, SeiInfo& out) {
         BitReader payload_br(rbsp.data.data() + payload_start / 8,
                              payload_size);
         FieldReader pr(payload_br, sb, payload_start);
-        parseSeiPayload(pr, payload_type, payload_size, hevc, out);
+        parseSeiPayload(pr, payload_type, payload_size, hevc, out, ctx);
         if (payload_br.fail()) {
           if (sb) sb->addError("SEI payload parse failed");
         }

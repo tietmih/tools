@@ -204,6 +204,7 @@ bsinfo stream.h264                    # NAL list with per-NAL summary
 bsinfo stream.h265 --frames           # frame table
 bsinfo stream.h264 --tree 4           # syntax tree of NAL 4
 bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
+bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB occupancy model
 ```
 
 `mtest` exercises the container/demux/decode path:
@@ -226,6 +227,7 @@ below are automated in `tests/` and run by CI on every push:
 | Decoded frames vs FFmpeg reference (MP4/TS/MKV/M2TS, fragmented MP4) | 8-bit pixel-identical; 10/12-bit within rounding tolerance |
 | ASan + UBSan over all test streams, mutation fuzz (200 per CI run, 3000 nightly) | no findings |
 | Windows runtime: container open, frame navigation, splitter drag, CSV export, layout persistence | verified by screenshot/automation |
+| CPB0 model on x264/x265 CBR and injected underflow | flat occupancy, no underflow; a 100 KB SEI is detected from frame 10 |
 | Windows installer: default, custom `/D=`, `/LANG=2052`, upgrade from 0.3.0, silent uninstall | files, shortcuts, HKCU entry, version hand-off and clean removal verified |
 | Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |
 
@@ -236,14 +238,18 @@ containers.
 
 - Raw elementary streams have no timestamps, so the video tab shows the nearest
   keyframe (labelled) instead of the exact frame. Container inputs are exact.
-- No thumbnail strip, slice/CTU overlay, DPB/GOP graph, HRD/CPB analysis, or
-  macroblock-level entropy decoding yet.
+- No thumbnail strip, slice/CTU overlay, DPB/GOP graph, or macroblock-level
+  entropy decoding yet.
+- The CPB model covers CPB0 from SPS VUI HRD; sub-picture, multiple CPBs and
+  concatenation are not modelled. Missing delays are marked as estimated, and
+  streams without HRD get a labelled average-bitrate estimate.
 - Decoding is single-threaded per request.
 - For container inputs the `Offset` column reports the offset inside the
   reconstructed Annex B stream, not the container file.
 - 10/12-bit preview RGB conversion can differ from the FFmpeg CLI by a few
   levels; decode correctness is checked with a bounded pixel tolerance.
-- H.265 SEI payloads are listed by type but not parsed in detail.
+- SEI details cover HDR (MDCV/CLL/ATC), recovery point, T.35 and user data;
+  other payload types are listed by type.
 - Multi-PPS streams that alternate between several PPS ids are parsed with the
   most recently activated state.
 

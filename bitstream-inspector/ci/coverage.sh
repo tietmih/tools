@@ -23,7 +23,13 @@ fi
 "$CMAKE" --build "$BUILD" --parallel "$JOBS"
 ( cd "$BUILD" && ctest --output-on-failure )
 
+need_vectors=0
 if [ ! -f "$VECTORS/manifest.json" ]; then
+    need_vectors=1
+elif ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("gen_version", 1) >= 2 else 1)' "$VECTORS/manifest.json"; then
+    need_vectors=1
+fi
+if [ "$need_vectors" -eq 1 ]; then
     python3 "$ROOT/tests/gen_vectors.py" --out "$VECTORS"
 fi
 FFMPEG=${FFMPEG:-ffmpeg}
@@ -37,6 +43,12 @@ python3 "$ROOT/tests/check_parse.py" --bsinfo "$BUILD/bsinfo" \
     --ffprobe "$FFPROBE" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_headers.py" --bsinfo "$BUILD/bsinfo" \
     --ffmpeg "$REF_FFMPEG" --vectors "$VECTORS"
+python3 "$ROOT/tests/check_sei.py" --bsinfo "$BUILD/bsinfo" \
+    --ffmpeg "$REF_FFMPEG" --vectors "$VECTORS"
+python3 "$ROOT/tests/check_hrd.py" --bsinfo "$BUILD/bsinfo" \
+    --ffmpeg "$REF_FFMPEG" --vectors "$VECTORS"
+python3 "$ROOT/tests/check_cpb.py" --bsinfo "$BUILD/bsinfo" \
+    --vectors "$VECTORS"
 if [ -x "$BUILD/mtest" ]; then
     python3 "$ROOT/tests/check_decode.py" --mtest "$BUILD/mtest" \
         --ffmpeg "$REF_FFMPEG" --ffprobe "$FFPROBE" --vectors "$VECTORS" \

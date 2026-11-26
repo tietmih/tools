@@ -132,6 +132,9 @@ bool Stream::loadBuffer(std::vector<uint8_t> data, std::string& error) {
   h264_ = H264State();
   h265_ = H265State();
   hdr_ = SeiHdrInfo();
+  cpb_ = CpbModelResult();
+  h265_vps_ = H265Vps();
+  have_h265_vps_ = false;
   h264_sps_versions_.clear();
   h264_pps_versions_.clear();
   h264_sps_hashes_.clear();
@@ -214,7 +217,11 @@ void Stream::analyze(std::string& error) {
     analyzeH265(error);
   else
     analyzeH264(error);
-  if (!frames_.empty()) associateNonVcl();
+  if (!frames_.empty()) {
+    associateNonVcl();
+    analyzeSeiHrd();
+    computeCpbModel();
+  }
 }
 
 void Stream::associateNonVcl() {
@@ -230,8 +237,16 @@ void Stream::associateNonVcl() {
       // Only parameter sets / SEI may be pulled forward as a prefix.
       // A VCL NAL whose header failed to parse stays orphaned instead of
       // being charged to the next picture.
-      if (nals_[j].frame_index == none && !nals_[j].is_vcl)
-        nals_[j].frame_index = static_cast<size_t>(frame);
+      if (nals_[j].frame_index != none || nals_[j].is_vcl) continue;
+      bool suffix = false;
+      if (last_frame >= 0) {
+        const int nal_type = nals_[j].unit.nal_type;
+        if (codec_ == Codec::H265 && (nal_type == 40 || nal_type == 38))
+          suffix = true;
+        else if (codec_ == Codec::H264 && nal_type == 12)
+          suffix = true;
+      }
+      nals_[j].frame_index = static_cast<size_t>(suffix ? last_frame : frame);
     }
     pending = i + 1;
     last_frame = frame;
@@ -372,6 +387,8 @@ void Stream::analyzeH264(std::string& error) {
           cur.frame_num = info.frame_num;
           cur.nal_type = type;
           cur.byte_offset = n.offset;
+          cur.sps_version = h264_cur_sps_;
+          cur.pps_version = h264_cur_pps_;
           cur.picture_type = sliceTypeChar(info.slice_type);
           cur.qp = 26 + state.pps.pic_init_qp_minus26 + info.slice_qp_delta;
           have_frame = true;
@@ -449,8 +466,18 @@ void Stream::analyzeH265(std::string& error) {
     if (type == 32) {
       rbsp = unescapeRbsp(p + 2, n.size - 2);
       BitReader br(rbsp.data.data(), rbsp.data.size());
-      parseH265Vps(br, nullptr);
-      e.summary = "VPS";
+      H265Vps vps;
+      parseH265Vps(br, nullptr, &vps);
+      if (vps.parsed_fully) {
+        state.vps = vps;
+        state.have_vps = true;
+        h265_vps_ = vps;
+        have_h265_vps_ = true;
+        e.summary = fmt("VPS %d, %d sub-layers", vps.vps_id,
+                        vps.max_sub_layers_minus1 + 1);
+      } else {
+        e.error = "VPS parse failed";
+      }
     } else if (type == 33) {
       rbsp = unescapeRbsp(p + 2, n.size - 2);
       BitReader br(rbsp.data.data(), rbsp.data.size());
@@ -528,6 +555,8 @@ void Stream::analyzeH265(std::string& error) {
           cur.nal_type = type;
           cur.temporal_id = temporal_id_plus1 - 1;
           cur.byte_offset = n.offset;
+          cur.sps_version = h265_cur_sps_;
+          cur.pps_version = h265_cur_pps_;
           cur.poc = info.pic_order_cnt_lsb;
           if (info.slice_type == SliceType::I || info.idr) {
             cur.picture_type = 'I';
@@ -576,6 +605,292 @@ void Stream::analyzeH265(std::string& error) {
     error = "no decodable slices found (framing may not be Annex B)";
 }
 
+bool Stream::makeSeiHrdContext(int sps_version, bool hevc,
+                               SeiHrdContext& ctx) const {
+  ctx = SeiHrdContext();
+  ctx.hevc = hevc;
+  if (!hevc) {
+    const H264Sps* sps = nullptr;
+    if (sps_version >= 0 &&
+        sps_version < static_cast<int>(h264_sps_versions_.size())) {
+      sps = &h264_sps_versions_[static_cast<size_t>(sps_version)];
+    } else if (h264_.have_sps) {
+      sps = &h264_.sps;
+    }
+    if (!sps) return false;
+    ctx.has_sps = true;
+    ctx.nal_hrd = sps->nal_hrd.present;
+    ctx.vcl_hrd = sps->vcl_hrd.present;
+    ctx.nal_cpb_cnt_minus1 = static_cast<int>(sps->nal_hrd.cpb_cnt_minus1);
+    ctx.vcl_cpb_cnt_minus1 = static_cast<int>(sps->vcl_hrd.cpb_cnt_minus1);
+    const H264Hrd& hrd = sps->nal_hrd.present ? sps->nal_hrd : sps->vcl_hrd;
+    if (hrd.present) {
+      ctx.initial_cpb_removal_delay_length =
+          static_cast<int>(hrd.initial_cpb_removal_delay_length_minus1) + 1;
+      ctx.cpb_removal_delay_length =
+          static_cast<int>(hrd.cpb_removal_delay_length_minus1) + 1;
+      ctx.dpb_output_delay_length =
+          static_cast<int>(hrd.dpb_output_delay_length_minus1) + 1;
+      ctx.time_offset_length = static_cast<int>(hrd.time_offset_length);
+    }
+    ctx.pic_struct_present = sps->pic_struct_present;
+    ctx.low_delay_hrd = sps->low_delay_hrd;
+    return true;
+  }
+
+  const H265Sps* sps = nullptr;
+  if (sps_version >= 0 &&
+      sps_version < static_cast<int>(h265_sps_versions_.size())) {
+    sps = &h265_sps_versions_[static_cast<size_t>(sps_version)];
+  } else if (h265_.have_sps) {
+    sps = &h265_.sps;
+  }
+  if (!sps) return false;
+  ctx.has_sps = true;
+  ctx.h265_hrd = &sps->hrd;
+  ctx.highest_tid = sps->max_sub_layers_minus1;
+  ctx.frame_field_info_present = sps->frame_field_info_present;
+  return true;
+}
+
+void Stream::analyzeSeiHrd() {
+  const bool hevc = codec_ == Codec::H265;
+  const size_t header = hevc ? 2 : 1;
+  for (auto& entry : nals_) {
+    if (hevc) {
+      if (entry.unit.nal_type != 39 && entry.unit.nal_type != 40) continue;
+    } else if (entry.unit.nal_type != 6) {
+      continue;
+    }
+    if (entry.unit.size <= header) continue;
+    int sps_version = -1;
+    if (entry.frame_index < frames_.size())
+      sps_version = frames_[entry.frame_index].sps_version;
+    SeiHrdContext ctx;
+    if (!makeSeiHrdContext(sps_version, hevc, ctx)) continue;
+    const uint8_t* p = data_.data() + entry.unit.payload_off;
+    Rbsp rbsp = unescapeRbsp(p + header, entry.unit.size - header);
+    parseSei(rbsp, nullptr, hevc, entry.sei, &ctx);
+  }
+}
+
+void Stream::computeCpbModel() {
+  cpb_ = CpbModelResult();
+  CpbParams params;
+  CpbInitial initial;
+  double tick = 0.0;
+  bool estimated = false;
+
+  if (codec_ == Codec::H264) {
+    if (!h264_.have_sps) {
+      cpb_.error = "no active SPS";
+      return;
+    }
+    const H264Sps& sps = h264_.sps;
+    const H264Hrd* hrd = nullptr;
+    if (sps.nal_hrd.present && !sps.nal_hrd.cpb.empty())
+      hrd = &sps.nal_hrd;
+    else if (sps.vcl_hrd.present && !sps.vcl_hrd.cpb.empty())
+      hrd = &sps.vcl_hrd;
+    if (hrd) {
+      const HrdCpb& cpb0 = hrd->cpb[0];
+      params.bit_rate = cpb0.bit_rate;
+      params.cpb_size = cpb0.cpb_size;
+      params.cbr = cpb0.cbr;
+      params.source = sps.nal_hrd.present ? "nal_hrd" : "vcl_hrd";
+      params.delay_bits =
+          static_cast<int>(hrd->cpb_removal_delay_length_minus1) + 1;
+    } else {
+      estimated = true;
+      params.source = "estimated";
+    }
+    if (sps.timing_info_present && sps.num_units_in_tick > 0 &&
+        sps.time_scale > 0) {
+      tick = static_cast<double>(sps.num_units_in_tick) /
+             static_cast<double>(sps.time_scale);
+    }
+  } else if (codec_ == Codec::H265) {
+    if (!h265_.have_sps) {
+      cpb_.error = "no active SPS";
+      return;
+    }
+    const H265Sps& sps = h265_.sps;
+    const HrdCpb* cpb0 = nullptr;
+    if (sps.vui_hrd_present && sps.hrd.present && !sps.hrd.sub_layers.empty()) {
+      int tid = sps.max_sub_layers_minus1;
+      if (tid < 0) tid = 0;
+      if (tid >= static_cast<int>(sps.hrd.sub_layers.size()))
+        tid = static_cast<int>(sps.hrd.sub_layers.size()) - 1;
+      const H265HrdSubLayer& sl = sps.hrd.sub_layers[static_cast<size_t>(tid)];
+      if (sps.hrd.nal_hrd_present && !sl.nal_cpb.empty())
+        cpb0 = &sl.nal_cpb[0];
+      else if (sps.hrd.vcl_hrd_present && !sl.vcl_cpb.empty())
+        cpb0 = &sl.vcl_cpb[0];
+    }
+    if (cpb0) {
+      params.bit_rate = cpb0->bit_rate;
+      params.cpb_size = cpb0->cpb_size;
+      params.cbr = cpb0->cbr;
+      params.source = sps.hrd.nal_hrd_present ? "sps_nal_hrd" : "sps_vcl_hrd";
+      params.delay_bits =
+          static_cast<int>(sps.hrd.au_cpb_removal_delay_length_minus1) + 1;
+    } else {
+      estimated = true;
+      params.source = "estimated";
+    }
+    if (sps.timing_info_present && sps.num_units_in_tick > 0 &&
+        sps.time_scale > 0) {
+      tick = static_cast<double>(sps.num_units_in_tick) /
+             static_cast<double>(sps.time_scale);
+    }
+  } else {
+    cpb_.error = "unknown codec";
+    return;
+  }
+
+  const double fps = this->fps();
+  if (estimated) {
+    if (!(fps > 0.0) || frames_.empty()) {
+      cpb_.error = "no frame rate for estimated CPB";
+      cpb_.params = params;
+      return;
+    }
+    uint64_t total_bits = 0;
+    for (const auto& entry : nals_) {
+      total_bits += (static_cast<uint64_t>(entry.unit.size) +
+                     static_cast<uint64_t>(entry.unit.start_code_len)) *
+                    8;
+    }
+    const double average = static_cast<double>(total_bits) * fps /
+                           static_cast<double>(frames_.size());
+    params.bit_rate = static_cast<uint64_t>(average);
+    params.cpb_size =
+        params.bit_rate > 0 ? params.bit_rate : 1;  // one-second estimate
+    params.cbr = false;
+    params.delay_bits = 0;
+    params.source = "estimated";
+    tick = 1.0 / fps;
+  }
+  if (!(tick > 0.0) && fps > 0.0) tick = 1.0 / fps;
+  if (!(tick > 0.0)) {
+    cpb_.error = "no HRD clock tick";
+    cpb_.params = params;
+    return;
+  }
+
+  std::vector<CpbAuInput> aus(frames_.size());
+  const double fallback = fps > 0.0 ? 1.0 / fps : 0.0;
+  for (size_t i = 0; i < frames_.size(); i++) {
+    CpbAuInput& au = aus[i];
+    au.fallback_interval_sec = fallback;
+    uint64_t bits = 0;
+    for (const auto& entry : nals_) {
+      if (entry.frame_index != i) continue;
+      bits += (static_cast<uint64_t>(entry.unit.size) +
+               static_cast<uint64_t>(entry.unit.start_code_len)) *
+              8;
+    }
+    au.bits = bits;
+    for (const auto& entry : nals_) {
+      if (entry.frame_index != i) continue;
+      const SeiInfo& sei = entry.sei;
+      if (sei.buffering_period.present) {
+        const SeiBufferingPeriod& bp = sei.buffering_period;
+        initial.present = true;
+        au.segment_start = true;
+        if (codec_ == Codec::H264) {
+          const H264Sps& sps = h264_.sps;
+          const bool use_nal =
+              sps.nal_hrd.present && !bp.nal_initial_cpb_removal_delay.empty();
+          const auto& delays = use_nal ? bp.nal_initial_cpb_removal_delay
+                                       : bp.vcl_initial_cpb_removal_delay;
+          const auto& offsets = use_nal ? bp.nal_initial_cpb_removal_offset
+                                        : bp.vcl_initial_cpb_removal_offset;
+          if (!delays.empty()) {
+            initial.initial_delay = delays[0];
+            if (!offsets.empty()) initial.initial_offset = offsets[0];
+          }
+        } else {
+          const H265Sps& sps = h265_.sps;
+          const bool use_nal = sps.hrd.nal_hrd_present &&
+                               !bp.nal_initial_cpb_removal_delay.empty();
+          const auto& delays = use_nal ? bp.nal_initial_cpb_removal_delay
+                                       : bp.vcl_initial_cpb_removal_delay;
+          const auto& offsets = use_nal ? bp.nal_initial_cpb_removal_offset
+                                        : bp.vcl_initial_cpb_removal_offset;
+          if (!delays.empty()) {
+            initial.initial_delay = delays[0];
+            if (!offsets.empty()) initial.initial_offset = offsets[0];
+          }
+          if (bp.irap_cpb_params_present || bp.concatenation_flag)
+            initial.estimated = true;
+        }
+      }
+      if (sei.pic_timing.present && sei.pic_timing.has_delays) {
+        au.has_removal_delay = true;
+        au.removal_delay = codec_ == Codec::H264
+                               ? sei.pic_timing.cpb_removal_delay
+                               : sei.pic_timing.au_cpb_removal_delay_minus1 + 1;
+      }
+    }
+  }
+  cpb_ = buildCpbModel(params, initial, tick, aus);
+  cpb_.params = params;
+}
+
+std::string Stream::cpbCsv() const {
+  std::string out =
+      "index,type,poc,au_bits,delay_ticks,removal_time_ms,occupancy_before_"
+      "bits,occupancy_bits,occupancy_ratio,underflow,overflow,estimated,"
+      "segment_start,cpb_index,bit_rate_bps,cpb_size_bits,cbr\r\n";
+  if (!cpb_.valid) return out;
+  for (size_t i = 0; i < cpb_.samples.size(); i++) {
+    const CpbSample& sample = cpb_.samples[i];
+    out += std::to_string(sample.frame_index);
+    out += ',';
+    if (i < frames_.size()) out += frameTypeName(frames_[i]);
+    out += ',';
+    if (i < frames_.size()) out += std::to_string(frames_[i].poc);
+    out += ',';
+    out += std::to_string(static_cast<unsigned long long>(sample.au_bits));
+    out += ',';
+    if (sample.has_removal_delay) out += std::to_string(sample.removal_delay);
+    out += ',';
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%.3f", sample.removal_time_sec * 1000.0);
+    out += buf;
+    out += ',';
+    std::snprintf(buf, sizeof(buf), "%.3f", sample.occupancy_before_bits);
+    out += buf;
+    out += ',';
+    std::snprintf(buf, sizeof(buf), "%.3f", sample.occupancy_after_bits);
+    out += buf;
+    out += ',';
+    std::snprintf(buf, sizeof(buf), "%.6f", sample.occupancy_ratio);
+    out += buf;
+    out += ',';
+    out += sample.underflow ? "1" : "0";
+    out += ',';
+    out += sample.overflow ? "1" : "0";
+    out += ',';
+    out += sample.estimated ? "1" : "0";
+    out += ',';
+    out += sample.segment_start ? "1" : "0";
+    out += ',';
+    out += std::to_string(cpb_.params.cpb_index);
+    out += ',';
+    out +=
+        std::to_string(static_cast<unsigned long long>(cpb_.params.bit_rate));
+    out += ',';
+    out +=
+        std::to_string(static_cast<unsigned long long>(cpb_.params.cpb_size));
+    out += ',';
+    out += cpb_.params.cbr ? "1" : "0";
+    out += "\r\n";
+  }
+  return out;
+}
+
 std::vector<SyntaxNode> Stream::syntaxTree(size_t nal_index) const {
   std::vector<SyntaxNode> roots;
   if (nal_index >= nals_.size()) return roots;
@@ -607,7 +922,13 @@ std::vector<SyntaxNode> Stream::syntaxTree(size_t nal_index) const {
       parseH264Pps(br, &sb, pps, sps);
     } else if (type == 6) {
       SeiInfo info;
-      parseSei(rbsp, &sb, false, info);
+      SeiHrdContext hrd_ctx;
+      int sps_version = -1;
+      if (e.frame_index < frames_.size())
+        sps_version = frames_[e.frame_index].sps_version;
+      const SeiHrdContext* ctx =
+          makeSeiHrdContext(sps_version, false, hrd_ctx) ? &hrd_ctx : nullptr;
+      parseSei(rbsp, &sb, false, info, ctx);
     } else if (type == 9) {
       Section sec(&sb, "access_unit_delimiter_rbsp");
       uint64_t aud_pos = br.pos();
@@ -652,7 +973,13 @@ std::vector<SyntaxNode> Stream::syntaxTree(size_t nal_index) const {
       sb.addUInt("pic_type", v, aud_pos, 3);
     } else if (type == 39 || type == 40) {
       SeiInfo info;
-      parseSei(rbsp, &sb, true, info);
+      SeiHrdContext hrd_ctx;
+      int sps_version = -1;
+      if (e.frame_index < frames_.size())
+        sps_version = frames_[e.frame_index].sps_version;
+      const SeiHrdContext* ctx =
+          makeSeiHrdContext(sps_version, true, hrd_ctx) ? &hrd_ctx : nullptr;
+      parseSei(rbsp, &sb, true, info, ctx);
     } else if (type <= 31) {
       H265State state = h265_;
       if (e.sps_version >= 0 &&

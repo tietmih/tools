@@ -44,7 +44,14 @@ CORE_FIELDS = {
             "log2_max_frame_num_minus4", "pic_order_cnt_type",
             "max_num_ref_frames", "pic_width_in_mbs_minus1",
             "pic_height_in_map_units_minus1", "frame_mbs_only_flag",
-            "frame_cropping_flag",
+            "frame_cropping_flag", "nal_hrd_parameters_present_flag",
+            "vcl_hrd_parameters_present_flag", "cpb_cnt_minus1",
+            "bit_rate_scale", "cpb_size_scale", "bit_rate_value_minus1[0]",
+            "cpb_size_value_minus1[0]", "cbr_flag[0]",
+            "initial_cpb_removal_delay_length_minus1",
+            "cpb_removal_delay_length_minus1",
+            "dpb_output_delay_length_minus1", "time_offset_length",
+            "low_delay_hrd_flag", "pic_struct_present_flag",
         ],
         "Picture Parameter Set": [
             "pic_parameter_set_id", "seq_parameter_set_id",
@@ -59,12 +66,27 @@ CORE_FIELDS = {
         "Video Parameter Set": [
             "vps_video_parameter_set_id", "vps_max_layers_minus1",
             "vps_max_sub_layers_minus1", "vps_temporal_id_nesting_flag",
+            "vps_sub_layer_ordering_info_present_flag",
+            "vps_max_dec_pic_buffering_minus1[0]",
+            "vps_max_num_reorder_pics[0]", "vps_max_latency_increase_plus1[0]",
+            "vps_max_layer_id", "vps_num_layer_sets_minus1",
+            "vps_timing_info_present_flag", "vps_extension_flag",
         ],
         "Sequence Parameter Set": [
             "sps_video_parameter_set_id", "sps_max_sub_layers_minus1",
             "chroma_format_idc", "pic_width_in_luma_samples",
             "pic_height_in_luma_samples", "conformance_window_flag",
             "bit_depth_luma_minus8", "bit_depth_chroma_minus8",
+            "vui_hrd_parameters_present_flag",
+            "nal_hrd_parameters_present_flag",
+            "vcl_hrd_parameters_present_flag",
+            "sub_pic_hrd_params_present_flag", "bit_rate_scale",
+            "cpb_size_scale", "initial_cpb_removal_delay_length_minus1",
+            "au_cpb_removal_delay_length_minus1",
+            "dpb_output_delay_length_minus1", "fixed_pic_rate_general_flag[0]",
+            "elemental_duration_in_tc_minus1[0]", "cpb_cnt_minus1[0]",
+            "bit_rate_value_minus1[0]", "cpb_size_value_minus1[0]",
+            "cbr_flag[0]",
         ],
         "Picture Parameter Set": [
             "pps_pic_parameter_set_id", "pps_seq_parameter_set_id",
@@ -221,7 +243,8 @@ def main():
 
     manifest = json.load(open(os.path.join(args.vectors, "manifest.json")))
     targets = [v for v in manifest["raw"]
-               if v["file"] in ("h264_b.h264", "h265_b.h265")]
+               if v["file"] in ("h264_b.h264", "h265_b.h265",
+                                "h264_cbr.h264", "h265_cbr.h265")]
     failures = []
     for vector in targets:
         path = os.path.join(args.vectors, vector["file"])

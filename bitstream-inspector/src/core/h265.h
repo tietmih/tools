@@ -6,6 +6,7 @@
 
 #include "core/bitreader.h"
 #include "core/h264.h"  // SliceType
+#include "core/hrd.h"
 #include "core/syntax.h"
 
 namespace bs {
@@ -79,6 +80,9 @@ struct H265Sps {
   int transfer_characteristics = 2;
   int matrix_coefficients = 2;
   bool field_seq_flag = false;
+  bool frame_field_info_present = false;
+  bool vui_hrd_present = false;
+  H265Hrd hrd;
 
   std::vector<H265Rps> st_rps;
   bool use_integer_mv = false;
@@ -165,16 +169,45 @@ struct H265SliceInfo {
   uint64_t header_bits = 0;
 };
 
+struct H265VpsHrd {
+  uint32_t hrd_layer_set_idx = 0;
+  bool cprms_present = true;
+  H265Hrd hrd;
+};
+
+struct H265Vps {
+  int vps_id = 0;
+  int max_layers_minus1 = 0;
+  int max_sub_layers_minus1 = 0;
+  H265ProfileTierLevel ptl;
+  bool sub_layer_ordering_info_present = false;
+  std::vector<int> max_dec_pic_buffering_minus1;
+  std::vector<int> max_num_reorder_pics;
+  std::vector<int> max_latency_increase_plus1;
+  int max_layer_id = 0;
+  int num_layer_sets_minus1 = 0;
+  bool timing_info_present = false;
+  uint32_t num_units_in_tick = 0;
+  uint32_t time_scale = 0;
+  bool poc_proportional_to_timing = false;
+  uint32_t num_ticks_poc_diff_one_minus1 = 0;
+  std::vector<H265VpsHrd> hrd;
+  bool extension = false;
+  bool parsed_fully = false;
+};
+
 struct H265State {
   H265Sps sps;
   H265Pps pps;
+  H265Vps vps;
   bool have_sps = false;
   bool have_pps = false;
+  bool have_vps = false;
   int nal_type = 0;
   int temporal_id_plus1 = 1;
 };
 
-void parseH265Vps(BitReader& br, SyntaxBuilder* sb);
+void parseH265Vps(BitReader& br, SyntaxBuilder* sb, H265Vps* out = nullptr);
 void parseH265Sps(BitReader& br, SyntaxBuilder* sb, H265Sps& sps);
 void parseH265Pps(BitReader& br, SyntaxBuilder* sb, H265Pps& pps);
 void parseH265SliceSegmentHeader(BitReader& br, SyntaxBuilder* sb,

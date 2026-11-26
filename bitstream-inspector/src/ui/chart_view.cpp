@@ -64,6 +64,11 @@ void ChartView::setSelected(int frame_index) {
   if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
+void ChartView::setMode(ChartMode mode) {
+  mode_ = mode;
+  if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
 void ChartView::invalidate() {
   if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
 }
@@ -119,6 +124,11 @@ void ChartView::paintTo(HDC target, const RECT& rc) {
   const auto& frames = stream_->frames();
 
   Plot plot = {px(10), rc.right - px(10), px(34), rc.bottom - px(22)};
+  if (mode_ == ChartMode::Cpb) {
+    paintCpb(dc, rc);
+    finish();
+    return;
+  }
   int width = plot.right - plot.left;
   int height = plot.bottom - plot.top;
   if (width <= 4 || height <= 4) {
@@ -232,6 +242,112 @@ void ChartView::paintTo(HDC target, const RECT& rc) {
   }
 
   finish();
+}
+
+void ChartView::paintCpb(HDC dc, const RECT& rc) {
+  SelectObject(dc, uiFont());
+  SetBkMode(dc, TRANSPARENT);
+  const CpbModelResult& model = stream_->cpbModel();
+  Plot plot = {px(10), rc.right - px(10), px(34), rc.bottom - px(22)};
+  int width = plot.right - plot.left;
+  int height = plot.bottom - plot.top;
+  if (width <= 4 || height <= 4) return;
+
+  if (!model.valid || model.samples.empty()) {
+    SetTextColor(dc, RGB(130, 130, 130));
+    std::wstring message =
+        model.error.empty()
+            ? tr(L"No HRD parameters in the active SPS",
+                 L"当前 SPS 没有 HRD 参数")
+            : std::wstring(model.error.begin(), model.error.end());
+    RECT text_rc = rc;
+    DrawTextW(dc, message.c_str(), -1, &text_rc,
+              DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    return;
+  }
+
+  HPEN grid_pen = CreatePen(PS_SOLID, 1, RGB(228, 228, 228));
+  HGDIOBJ old_pen = SelectObject(dc, grid_pen);
+  for (int i = 0; i <= 4; i++) {
+    int y = plot.bottom - height * i / 4;
+    MoveToEx(dc, plot.left, y, nullptr);
+    LineTo(dc, plot.right, y);
+  }
+  HPEN full_pen = CreatePen(PS_DASH, 1, RGB(150, 150, 150));
+  SelectObject(dc, full_pen);
+  MoveToEx(dc, plot.left, plot.top, nullptr);
+  LineTo(dc, plot.right, plot.top);
+  SelectObject(dc, old_pen);
+  DeleteObject(full_pen);
+  DeleteObject(grid_pen);
+
+  HBRUSH bar_brush = CreateSolidBrush(RGB(52, 108, 200));
+  HBRUSH under_brush = CreateSolidBrush(RGB(196, 48, 48));
+  const size_t count = model.samples.size();
+  for (int x = plot.left; x < plot.right; x++) {
+    size_t first =
+        static_cast<size_t>(x - plot.left) * count / static_cast<size_t>(width);
+    size_t last = static_cast<size_t>(x - plot.left + 1) * count /
+                  static_cast<size_t>(width);
+    if (last <= first) last = first + 1;
+    if (last > count) last = count;
+    double ratio = model.samples[first].occupancy_ratio;
+    bool underflow = model.samples[first].underflow;
+    bool overflow = model.samples[first].overflow;
+    for (size_t i = first; i < last; i++) {
+      ratio = std::min(ratio, model.samples[i].occupancy_ratio);
+      underflow = underflow || model.samples[i].underflow;
+      overflow = overflow || model.samples[i].overflow;
+    }
+    ratio = std::max(-0.05, std::min(1.0, ratio));
+    int top = plot.bottom - static_cast<int>(ratio * height);
+    if (top > plot.bottom) top = plot.bottom;
+    RECT bar = {x, top, x + 1, plot.bottom};
+    FillRect(dc, &bar, underflow ? under_brush : bar_brush);
+    if (underflow) {
+      RECT mark = {x, plot.bottom - 2, x + 1, plot.bottom};
+      FillRect(dc, &mark, under_brush);
+    }
+    if (overflow) {
+      RECT mark = {x, plot.top, x + 1, plot.top + 2};
+      FillRect(dc, &mark, under_brush);
+    }
+  }
+  DeleteObject(bar_brush);
+  DeleteObject(under_brush);
+
+  if (selected_ >= 0 && selected_ < static_cast<int>(count)) {
+    int x = plot.left + static_cast<int>(static_cast<double>(selected_) *
+                                         width / static_cast<double>(count));
+    HPEN marker = CreatePen(PS_SOLID, 2, RGB(30, 30, 30));
+    HGDIOBJ old = SelectObject(dc, marker);
+    MoveToEx(dc, x, plot.top, nullptr);
+    LineTo(dc, x, plot.bottom);
+    SelectObject(dc, old);
+    DeleteObject(marker);
+  }
+
+  SetTextColor(dc, RGB(100, 100, 100));
+  std::wstring title = tr(L"CPB occupancy (%)", L"CPB 占用率（%）");
+  TextOutW(dc, plot.left, px(2), title.c_str(), static_cast<int>(title.size()));
+  wchar_t params[128];
+  swprintf(params, 128, L"%llu b/s  %llu bits",
+           static_cast<unsigned long long>(model.params.bit_rate),
+           static_cast<unsigned long long>(model.params.cpb_size));
+  std::wstring source(model.params.source.begin(), model.params.source.end());
+  std::wstring right = source + params;
+  SIZE sz = {};
+  GetTextExtentPoint32W(dc, right.c_str(), static_cast<int>(right.size()), &sz);
+  TextOutW(dc, plot.right - sz.cx, px(2), right.c_str(),
+           static_cast<int>(right.size()));
+  std::wstring footer = tr(L"underflows: ", L"下溢：") +
+                        std::to_wstring(model.underflow_count) + L"    " +
+                        tr(L"overflows: ", L"溢出：") +
+                        std::to_wstring(model.full_events);
+  if (model.params.source == "estimated")
+    footer += tr(L"  (estimated)", L"（估算）");
+  TextOutW(dc, plot.left, plot.bottom + px(4), footer.c_str(),
+           static_cast<int>(footer.size()));
 }
 
 LRESULT ChartView::handle(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {

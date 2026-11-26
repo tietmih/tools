@@ -39,7 +39,13 @@ asan)
         -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" "${CCACHE_ARG[@]}"
     "$CMAKE" --build "$BUILD" --parallel "$JOBS"
     ( cd "$BUILD" && ASAN_OPTIONS=detect_leaks=0 ctest --output-on-failure )
+    need_vectors=0
     if [ ! -f "$VECTORS/manifest.json" ]; then
+        need_vectors=1
+    elif ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("gen_version", 1) >= 2 else 1)' "$VECTORS/manifest.json"; then
+        need_vectors=1
+    fi
+    if [ "$need_vectors" -eq 1 ]; then
         python3 "$ROOT/tests/gen_vectors.py" --out "$VECTORS"
     fi
     for stream in "$VECTORS"/*.h264 "$VECTORS"/*.h265; do

@@ -30,25 +30,39 @@ void parseScalingList(FieldReader& r, int size, const char* name) {
   }
 }
 
-void parseHrd(FieldReader& r, const char* name) {
+void parseHrd(FieldReader& r, const char* name, H264Hrd* out) {
   Section s(r.sb(), name);
-  uint32_t cpb_cnt = r.ue("cpb_cnt_minus1");
-  r.u(4, "bit_rate_scale");
-  r.u(4, "cpb_size_scale");
-  if (cpb_cnt > 31) {
+  H264Hrd hrd;
+  hrd.cpb_cnt_minus1 = r.ue("cpb_cnt_minus1");
+  hrd.bit_rate_scale = r.u(4, "bit_rate_scale");
+  hrd.cpb_size_scale = r.u(4, "cpb_size_scale");
+  if (hrd.cpb_cnt_minus1 > 31) {
     r.error("cpb_cnt_minus1 out of range");
     return;
   }
-  for (uint32_t i = 0; i <= cpb_cnt && !r.fail(); i++) {
-    std::string prefix = "cpb[" + std::to_string(i) + "]";
-    r.ue((prefix + ".bit_rate_value_minus1").c_str());
-    r.ue((prefix + ".cpb_size_value_minus1").c_str());
-    r.u(1, (prefix + ".cbr_flag").c_str());
+  for (uint32_t i = 0; i <= hrd.cpb_cnt_minus1 && !r.fail(); i++) {
+    std::string rate = "bit_rate_value_minus1[" + std::to_string(i) + "]";
+    std::string size = "cpb_size_value_minus1[" + std::to_string(i) + "]";
+    std::string cbr_name = "cbr_flag[" + std::to_string(i) + "]";
+    HrdCpb cpb;
+    cpb.bit_rate_value_minus1 = r.ue(rate.c_str());
+    cpb.cpb_size_value_minus1 = r.ue(size.c_str());
+    r.flag(cbr_name.c_str(), cpb.cbr);
+    cpb.bit_rate = (static_cast<uint64_t>(cpb.bit_rate_value_minus1) + 1)
+                   << (6 + hrd.bit_rate_scale);
+    cpb.cpb_size = (static_cast<uint64_t>(cpb.cpb_size_value_minus1) + 1)
+                   << (4 + hrd.cpb_size_scale);
+    hrd.cpb.push_back(cpb);
   }
-  r.u(5, "initial_cpb_removal_delay_length_minus1");
-  r.u(5, "cpb_removal_delay_length_minus1");
-  r.u(5, "dpb_output_delay_length_minus1");
-  r.u(5, "time_offset_length");
+  hrd.initial_cpb_removal_delay_length_minus1 =
+      r.u(5, "initial_cpb_removal_delay_length_minus1");
+  hrd.cpb_removal_delay_length_minus1 =
+      r.u(5, "cpb_removal_delay_length_minus1");
+  hrd.dpb_output_delay_length_minus1 = r.u(5, "dpb_output_delay_length_minus1");
+  hrd.time_offset_length = r.u(5, "time_offset_length");
+  if (r.fail()) return;
+  hrd.present = true;
+  if (out) *out = hrd;
 }
 
 const char* kAspectRatioNames[] = {
@@ -119,15 +133,11 @@ void parseH264Vui(FieldReader& r, H264Sps& sps) {
   }
   bool nal_hrd = false, vcl_hrd = false;
   r.flag("nal_hrd_parameters_present_flag", nal_hrd);
-  if (nal_hrd) parseHrd(r, "nal_hrd_parameters");
+  if (nal_hrd) parseHrd(r, "nal_hrd_parameters", &sps.nal_hrd);
   r.flag("vcl_hrd_parameters_present_flag", vcl_hrd);
-  if (vcl_hrd) parseHrd(r, "vcl_hrd_parameters");
-  if (nal_hrd || vcl_hrd) {
-    bool low_delay = false;
-    r.flag("low_delay_hrd_flag", low_delay);
-  }
-  bool pic_struct = false;
-  r.flag("pic_struct_present_flag", pic_struct);
+  if (vcl_hrd) parseHrd(r, "vcl_hrd_parameters", &sps.vcl_hrd);
+  if (nal_hrd || vcl_hrd) r.flag("low_delay_hrd_flag", sps.low_delay_hrd);
+  r.flag("pic_struct_present_flag", sps.pic_struct_present);
   bool restriction = false;
   r.flag("bitstream_restriction_flag", restriction);
   if (restriction) {

@@ -210,59 +210,113 @@ H265Rps parseShortTermRps(FieldReader& r, const H265Sps& sps, int st_rps_idx,
   return out;
 }
 
-void parseHrdParameters(FieldReader& r, int max_sub_layers_minus1,
-                        const char* name) {
-  Section s(r.sb(), name);
-  bool nal = false, vcl = false, sub_pic = false;
-  r.flag("nal_hrd_parameters_present_flag", nal);
-  r.flag("vcl_hrd_parameters_present_flag", vcl);
-  if (nal || vcl) {
-    r.flag("sub_pic_hrd_params_present_flag", sub_pic);
+void parseSubLayerHrd(FieldReader& r, uint32_t cpb_cnt_minus1, bool sub_pic,
+                      uint32_t bit_rate_scale, uint32_t cpb_size_scale,
+                      const char* prefix, std::vector<HrdCpb>& out) {
+  out.clear();
+  for (uint32_t i = 0; i <= cpb_cnt_minus1 && !r.fail(); i++) {
+    std::string idx = std::to_string(i);
+    std::string rate =
+        std::string(prefix) + "bit_rate_value_minus1[" + idx + "]";
+    std::string size =
+        std::string(prefix) + "cpb_size_value_minus1[" + idx + "]";
+    std::string cbr_name = std::string(prefix) + "cbr_flag[" + idx + "]";
+    HrdCpb cpb;
+    cpb.bit_rate_value_minus1 = r.ue(rate.c_str());
+    cpb.cpb_size_value_minus1 = r.ue(size.c_str());
     if (sub_pic) {
-      r.u(8, "tick_divisor_minus2");
-      r.u(5, "du_cpb_removal_delay_increment_length_minus1");
-      r.u(1, "sub_pic_cpb_params_in_pic_timing_sei_flag");
-      r.u(5, "dpb_output_delay_du_length_minus1");
+      r.ue((std::string(prefix) + "cpb_size_du_value_minus1[" + idx + "]")
+               .c_str());
+      r.ue((std::string(prefix) + "bit_rate_du_value_minus1[" + idx + "]")
+               .c_str());
     }
-    r.u(4, "bit_rate_scale");
-    r.u(4, "cpb_size_scale");
-    if (sub_pic) r.u(4, "cpb_size_du_scale");
-    r.u(5, "initial_cpb_removal_delay_length_minus1");
-    r.u(5, "au_cpb_removal_delay_length_minus1");
-    r.u(5, "dpb_output_delay_length_minus1");
+    r.flag(cbr_name.c_str(), cpb.cbr);
+    cpb.bit_rate = (static_cast<uint64_t>(cpb.bit_rate_value_minus1) + 1)
+                   << (6 + bit_rate_scale);
+    cpb.cpb_size = (static_cast<uint64_t>(cpb.cpb_size_value_minus1) + 1)
+                   << (4 + cpb_size_scale);
+    out.push_back(cpb);
   }
-  for (int i = 0; i <= max_sub_layers_minus1 && i < 8; i++) {
-    bool fixed_general = false;
-    r.flag("fixed_pic_rate_general_flag", fixed_general);
-    bool fixed_within = fixed_general;
-    if (!fixed_general) r.flag("fixed_pic_rate_within_cvs_flag", fixed_within);
-    bool low_delay = false;
-    int cpb_cnt = 0;
-    if (fixed_within) {
-      r.ue("elemental_duration_in_tc_minus1");
+}
+
+void parseHrdParameters(FieldReader& r, int max_sub_layers_minus1,
+                        const char* name, bool common_inf_present,
+                        H265Hrd* out) {
+  Section s(r.sb(), name);
+  H265Hrd hrd;
+  if (!common_inf_present && out) hrd = *out;
+  if (common_inf_present) {
+    bool nal = false, vcl = false, sub_pic = false;
+    r.flag("nal_hrd_parameters_present_flag", nal);
+    r.flag("vcl_hrd_parameters_present_flag", vcl);
+    hrd.nal_hrd_present = nal;
+    hrd.vcl_hrd_present = vcl;
+    if (nal || vcl) {
+      r.flag("sub_pic_hrd_params_present_flag", sub_pic);
+      hrd.sub_pic_hrd_params_present = sub_pic;
+      if (sub_pic) {
+        hrd.tick_divisor_minus2 = r.u(8, "tick_divisor_minus2");
+        hrd.du_cpb_removal_delay_increment_length_minus1 =
+            r.u(5, "du_cpb_removal_delay_increment_length_minus1");
+        r.flag("sub_pic_cpb_params_in_pic_timing_sei_flag",
+               hrd.sub_pic_cpb_params_in_pic_timing_sei);
+        hrd.dpb_output_delay_du_length_minus1 =
+            r.u(5, "dpb_output_delay_du_length_minus1");
+      }
+      hrd.bit_rate_scale = r.u(4, "bit_rate_scale");
+      hrd.cpb_size_scale = r.u(4, "cpb_size_scale");
+      if (sub_pic) hrd.cpb_size_du_scale = r.u(4, "cpb_size_du_scale");
+      hrd.initial_cpb_removal_delay_length_minus1 =
+          r.u(5, "initial_cpb_removal_delay_length_minus1");
+      hrd.au_cpb_removal_delay_length_minus1 =
+          r.u(5, "au_cpb_removal_delay_length_minus1");
+      hrd.dpb_output_delay_length_minus1 =
+          r.u(5, "dpb_output_delay_length_minus1");
     } else {
-      r.flag("low_delay_hrd_flag", low_delay);
+      hrd.initial_cpb_removal_delay_length_minus1 = 23;
+      hrd.au_cpb_removal_delay_length_minus1 = 23;
+      hrd.dpb_output_delay_length_minus1 = 23;
     }
-    if (!low_delay) {
-      cpb_cnt = static_cast<int>(r.ue("cpb_cnt_minus1"));
+  }
+  hrd.sub_layers.clear();
+  hrd.sub_layers.resize(static_cast<size_t>(max_sub_layers_minus1) + 1);
+  for (int i = 0; i <= max_sub_layers_minus1 && i < 8; i++) {
+    H265HrdSubLayer& sl = hrd.sub_layers[static_cast<size_t>(i)];
+    std::string idx = std::to_string(i);
+    r.flag(("fixed_pic_rate_general_flag[" + idx + "]").c_str(),
+           sl.fixed_pic_rate_general);
+    sl.fixed_pic_rate_within_cvs = sl.fixed_pic_rate_general;
+    if (!sl.fixed_pic_rate_general) {
+      r.flag(("fixed_pic_rate_within_cvs_flag[" + idx + "]").c_str(),
+             sl.fixed_pic_rate_within_cvs);
+    }
+    if (sl.fixed_pic_rate_within_cvs) {
+      sl.elemental_duration_in_tc_minus1 =
+          r.ue(("elemental_duration_in_tc_minus1[" + idx + "]").c_str());
+    } else {
+      r.flag(("low_delay_hrd_flag[" + idx + "]").c_str(), sl.low_delay_hrd);
+    }
+    if (!sl.low_delay_hrd) {
+      uint32_t cpb_cnt = r.ue(("cpb_cnt_minus1[" + idx + "]").c_str());
       if (cpb_cnt > 31) {
         r.error("cpb_cnt_minus1 out of range");
         return;
       }
+      sl.cpb_cnt_minus1 = cpb_cnt;
     }
-    if (nal || vcl) {
-      for (int j = 0; j <= cpb_cnt; j++) {
-        Section c(r.sb(), ("cpb[" + std::to_string(j) + "]").c_str());
-        r.ue("bit_rate_value_minus1");
-        r.ue("cpb_size_value_minus1");
-        if (sub_pic) {
-          r.ue("cpb_size_du_value_minus1");
-          r.ue("bit_rate_du_value_minus1");
-        }
-        r.u(1, "cbr_flag");
-      }
+    if (hrd.nal_hrd_present) {
+      parseSubLayerHrd(r, sl.cpb_cnt_minus1, hrd.sub_pic_hrd_params_present,
+                       hrd.bit_rate_scale, hrd.cpb_size_scale, "", sl.nal_cpb);
+    }
+    if (hrd.vcl_hrd_present) {
+      parseSubLayerHrd(r, sl.cpb_cnt_minus1, hrd.sub_pic_hrd_params_present,
+                       hrd.bit_rate_scale, hrd.cpb_size_scale, "vcl_",
+                       sl.vcl_cpb);
     }
   }
+  if (r.fail()) return;
+  hrd.present = true;
+  if (out) *out = hrd;
 }
 
 void parseH265Vui(FieldReader& r, H265Sps& sps) {
@@ -308,7 +362,7 @@ void parseH265Vui(FieldReader& r, H265Sps& sps) {
   bool field_seq = false;
   r.flag("field_seq_flag", field_seq);
   sps.field_seq_flag = field_seq;
-  r.u(1, "frame_field_info_present_flag");
+  r.flag("frame_field_info_present_flag", sps.frame_field_info_present);
   bool default_window = false;
   r.flag("default_display_window_flag", default_window);
   if (default_window) {
@@ -326,10 +380,11 @@ void parseH265Vui(FieldReader& r, H265Sps& sps) {
     bool proportional = false;
     r.flag("vui_poc_proportional_to_timing_flag", proportional);
     if (proportional) r.ue("vui_num_ticks_poc_diff_one_minus1");
-    bool hrd = false;
-    r.flag("vui_hrd_parameters_present_flag", hrd);
-    if (hrd)
-      parseHrdParameters(r, sps.max_sub_layers_minus1, "hrd_parameters( )");
+    r.flag("vui_hrd_parameters_present_flag", sps.vui_hrd_present);
+    if (sps.vui_hrd_present) {
+      parseHrdParameters(r, sps.max_sub_layers_minus1, "hrd_parameters( )",
+                         true, &sps.hrd);
+    }
   }
   bool restriction = false;
   r.flag("bitstream_restriction_flag", restriction);
@@ -360,19 +415,107 @@ int H265Sps::display_height() const {
   return height - sub_h * (conf_top + conf_bottom);
 }
 
-void parseH265Vps(BitReader& br, SyntaxBuilder* sb) {
+void parseH265Vps(BitReader& br, SyntaxBuilder* sb, H265Vps* out) {
   FieldReader r(br, sb);
   Section s(sb, "video_parameter_set_rbsp");
-  r.u(4, "vps_video_parameter_set_id");
+  H265Vps vps;
+  vps.vps_id = static_cast<int>(r.u(4, "vps_video_parameter_set_id"));
   r.u(1, "vps_base_layer_internal_flag");
   r.u(1, "vps_base_layer_available_flag");
-  r.u(6, "vps_max_layers_minus1");
+  vps.max_layers_minus1 = static_cast<int>(r.u(6, "vps_max_layers_minus1"));
   int max_sub = static_cast<int>(r.u(3, "vps_max_sub_layers_minus1"));
+  vps.max_sub_layers_minus1 = max_sub;
+  if (max_sub > 6) {
+    r.error("vps_max_sub_layers_minus1 out of range");
+    return;
+  }
   r.u(1, "vps_temporal_id_nesting_flag");
   r.skip(16, "vps_reserved_0xffff_16bits");
-  H265ProfileTierLevel ptl;
-  parseProfileTierLevel(r, ptl, max_sub, "profile_tier_level( )");
-  r.note("note", "remaining VPS fields not shown");
+  parseProfileTierLevel(r, vps.ptl, max_sub, "profile_tier_level( )");
+
+  bool ordering = false;
+  r.flag("vps_sub_layer_ordering_info_present_flag", ordering);
+  vps.sub_layer_ordering_info_present = ordering;
+  vps.max_dec_pic_buffering_minus1.assign(static_cast<size_t>(max_sub) + 1, 0);
+  vps.max_num_reorder_pics.assign(static_cast<size_t>(max_sub) + 1, 0);
+  vps.max_latency_increase_plus1.assign(static_cast<size_t>(max_sub) + 1, 0);
+  int start = ordering ? 0 : max_sub;
+  for (int i = start; i <= max_sub && !r.fail(); i++) {
+    std::string idx = std::to_string(i);
+    vps.max_dec_pic_buffering_minus1[static_cast<size_t>(i)] = static_cast<int>(
+        r.ue(("vps_max_dec_pic_buffering_minus1[" + idx + "]").c_str()));
+    vps.max_num_reorder_pics[static_cast<size_t>(i)] = static_cast<int>(
+        r.ue(("vps_max_num_reorder_pics[" + idx + "]").c_str()));
+    vps.max_latency_increase_plus1[static_cast<size_t>(i)] = static_cast<int>(
+        r.ue(("vps_max_latency_increase_plus1[" + idx + "]").c_str()));
+  }
+  if (!ordering && max_sub >= 0) {
+    for (int i = 0; i < max_sub; i++) {
+      vps.max_dec_pic_buffering_minus1[static_cast<size_t>(i)] =
+          vps.max_dec_pic_buffering_minus1[static_cast<size_t>(max_sub)];
+      vps.max_num_reorder_pics[static_cast<size_t>(i)] =
+          vps.max_num_reorder_pics[static_cast<size_t>(max_sub)];
+      vps.max_latency_increase_plus1[static_cast<size_t>(i)] =
+          vps.max_latency_increase_plus1[static_cast<size_t>(max_sub)];
+    }
+  }
+  vps.max_layer_id = static_cast<int>(r.u(6, "vps_max_layer_id"));
+  vps.num_layer_sets_minus1 =
+      static_cast<int>(r.ue("vps_num_layer_sets_minus1"));
+  if (vps.num_layer_sets_minus1 < 0 || vps.num_layer_sets_minus1 > 1023) {
+    r.error("vps_num_layer_sets_minus1 out of range");
+    return;
+  }
+  for (int i = 1; i <= vps.num_layer_sets_minus1 && !r.fail(); i++) {
+    for (int j = 0; j <= vps.max_layer_id; j++) {
+      std::string name = "layer_id_included_flag[" + std::to_string(i) + "][" +
+                         std::to_string(j) + "]";
+      r.u(1, name.c_str());
+    }
+  }
+  bool timing = false;
+  r.flag("vps_timing_info_present_flag", timing);
+  vps.timing_info_present = timing;
+  if (timing) {
+    vps.num_units_in_tick = r.u(32, "vps_num_units_in_tick");
+    vps.time_scale = r.u(32, "vps_time_scale");
+    r.flag("vps_poc_proportional_to_timing_flag",
+           vps.poc_proportional_to_timing);
+    if (vps.poc_proportional_to_timing) {
+      vps.num_ticks_poc_diff_one_minus1 =
+          r.ue("vps_num_ticks_poc_diff_one_minus1");
+    }
+    uint32_t num_hrd = r.ue("vps_num_hrd_parameters");
+    if (num_hrd > 64) {
+      r.error("vps_num_hrd_parameters out of range");
+      return;
+    }
+    for (uint32_t i = 0; i < num_hrd && !r.fail(); i++) {
+      H265VpsHrd entry;
+      std::string idx = std::to_string(i);
+      entry.hrd_layer_set_idx =
+          r.ue(("hrd_layer_set_idx[" + idx + "]").c_str());
+      if (i > 0) {
+        r.flag(("cprms_present_flag[" + idx + "]").c_str(),
+               entry.cprms_present);
+      }
+      if (!entry.cprms_present && !vps.hrd.empty()) {
+        entry.hrd = vps.hrd.back().hrd;
+      }
+      parseHrdParameters(r, max_sub, "hrd_parameters( )", entry.cprms_present,
+                         &entry.hrd);
+      vps.hrd.push_back(std::move(entry));
+    }
+  }
+  bool extension = false;
+  r.flag("vps_extension_flag", extension);
+  vps.extension = extension;
+  if (extension) {
+    while (br.more_rbsp_data() && !r.fail()) r.u(1, "vps_extension_data_flag");
+  }
+  if (r.fail()) return;
+  vps.parsed_fully = true;
+  if (out) *out = vps;
 }
 
 void parseH265Sps(BitReader& br, SyntaxBuilder* sb, H265Sps& sps) {

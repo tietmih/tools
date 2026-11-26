@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/bitreader.h"
+#include "core/hrd.h"
 #include "core/syntax.h"
 
 namespace bs {
@@ -78,6 +79,10 @@ struct H264Sps {
   bool chroma_loc_info_present = false;
   uint32_t num_reorder_frames = 0;
   uint32_t max_dec_frame_buffering = 0;
+  H264Hrd nal_hrd;
+  H264Hrd vcl_hrd;
+  bool low_delay_hrd = false;
+  bool pic_struct_present = false;
 
   bool valid = false;  // parser reached the end without range errors
   int width() const;   // cropped display width in samples

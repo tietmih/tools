@@ -11,10 +11,14 @@ using bs::Stream;
 // Frame-size bar chart with a picture-type strip. Clicking selects a frame.
 class ChartView {
  public:
+  enum class ChartMode { FrameSize, Cpb };
+
   void create(HWND parent, HINSTANCE inst, int id);
   HWND hwnd() const { return hwnd_; }
   void setStream(const Stream* stream);
   void setSelected(int frame_index);
+  void setMode(ChartMode mode);
+  ChartMode mode() const { return mode_; }
   void invalidate();
 
  private:
@@ -22,12 +26,14 @@ class ChartView {
                                   LPARAM lparam);
   LRESULT handle(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
   void paintTo(HDC target, const RECT& rc);
+  void paintCpb(HDC dc, const RECT& rc);
   void onClick(HWND hwnd, int x, int y);
 
   HWND hwnd_ = nullptr;
   HWND parent_ = nullptr;
   const Stream* stream_ = nullptr;
   int selected_ = -1;
+  ChartMode mode_ = ChartMode::FrameSize;
 };
 
 }  // namespace ui

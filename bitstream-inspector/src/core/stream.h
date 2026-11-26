@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "core/cpb.h"
 #include "core/h264.h"
 #include "core/h265.h"
 #include "core/nal.h"
@@ -38,6 +39,8 @@ struct FrameInfo {
   uint64_t slice_header_bits = 0;
   int qp = 0;  // first slice's derived QP (26 + pps.pic_init_qp_minus26 +
                // slice_qp_delta)
+  int sps_version = -1;
+  int pps_version = -1;
   // Filled in when the stream came from a container (or a demuxer with timing).
   int64_t pts = 0;
   int64_t dts = 0;
@@ -90,7 +93,9 @@ class Stream {
   bool haveH264Params() const { return h264_.have_sps || h264_.have_pps; }
   bool haveH265Params() const { return h265_.have_sps || h265_.have_pps; }
   const SeiHdrInfo& seiHdrInfo() const { return hdr_; }
+  const CpbModelResult& cpbModel() const { return cpb_; }
   std::string hdrSummary() const;
+  std::string cpbCsv() const;
 
   std::string streamSummary() const;
   double fps() const;
@@ -113,6 +118,9 @@ class Stream {
   void analyze(std::string& error);
   void analyzeH264(std::string& error);
   void analyzeH265(std::string& error);
+  void analyzeSeiHrd();
+  void computeCpbModel();
+  bool makeSeiHrdContext(int sps_version, bool hevc, SeiHrdContext& ctx) const;
   void associateNonVcl();
   bool looksLikeHevc(const uint8_t* data, size_t size) const;
 
@@ -127,6 +135,9 @@ class Stream {
   H265State h265_;
   // HDR metadata aggregated from every SEI NAL.
   SeiHdrInfo hdr_;
+  CpbModelResult cpb_;
+  H265Vps h265_vps_;
+  bool have_h265_vps_ = false;
   // Snapshot history so the syntax tree of an early NAL is rebuilt with the
   // parameter sets that were active at that point, not the last ones seen.
   std::vector<H264Sps> h264_sps_versions_;

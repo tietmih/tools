@@ -188,6 +188,7 @@ bsinfo stream.h264                    # NAL 列表和每个 NAL 的摘要
 bsinfo stream.h265 --frames           # 帧表
 bsinfo stream.h264 --tree 4           # NAL 4 的语法树
 bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
+bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB 占用模型
 ```
 
 `mtest` 用于验证容器解封装/解码链路：
@@ -210,6 +211,7 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 | 解码画面 vs FFmpeg 参考帧（MP4/TS/MKV/M2TS、分片 MP4） | 8-bit 逐像素一致；10/12-bit 在舍入容差内 |
 | 全部测试流跑 ASan + UBSan，变异 fuzz（CI 每轮 200、夜间 3000） | 无问题 |
 | Windows 运行时：容器打开、帧导航、分栏拖拽、CSV 导出、布局持久化 | 截图/自动化验证 |
+| CPB0 模型：x264/x265 CBR 与注入下溢 | 曲线平稳、无下溢；注入 100 KB SEI 后从第 10 帧检出 |
 | Windows 安装器：默认安装、自定义 `/D=`、`/LANG=2052`、从 0.3.0 升级、静默卸载 | 文件、快捷方式、HKCU 卸载项、版本交接和清理均验证 |
 | 运行时中英文切换及重启后保持 | 自动化/截图验证 |
 
@@ -219,12 +221,16 @@ mtest movie.mkv --frame 10 --ppm out.ppm
 
 - 裸流没有时间戳，画面页显示最近的关键帧（带提示），不是精确目标帧；容器输入
   是精确的。
-- 还没有缩略图条、slice/CTU 覆盖层、DPB/GOP 图、HRD/CPB 分析和宏块级熵解码。
+- 还没有缩略图条、slice/CTU 覆盖层、DPB/GOP 图和宏块级熵解码。
+- CPB 模型覆盖 SPS VUI HRD 的 CPB0；不支持 sub-picture、多 CPB 和
+  concatenation。缺失的延迟会标记为估算值，没有 HRD 的流会给出带标注的平均码率
+  估算。
 - 每次解码是单线程的。
 - 容器输入的 `偏移` 列是重构后的 Annex B 流内偏移，不是容器文件偏移。
 - 10/12-bit 预览的 RGB 转换可能与 FFmpeg CLI 相差几个等级；解码正确性用有界
   像素容差检查。
-- H.265 SEI 只列出类型，未深入解析内容。
+- SEI 详细解析覆盖 HDR（MDCV/CLL/ATC）、recovery point、T.35 和用户数据；其他
+  payload 只列出类型。
 - 多 PPS 流在多个 PPS id 之间切换时，使用最近一次激活的参数集解析。
 
 ## 目录结构

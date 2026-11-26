@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
   if (argc < 2) {
     std::fprintf(stderr,
                  "usage: bsinfo <file.h264|file.h265> [--frames] [--tree "
-                 "<nal-index>]\n");
+                 "<nal-index>] [--cpb] [--csv-cpb <path>]\n");
     return 2;
   }
   Stream s;
@@ -36,9 +36,11 @@ int main(int argc, char** argv) {
               s.nals().size(), s.frames().size());
 
   bool showFrames = false;
+  bool showCpb = false;
   long treeIndex = -1;
   const char* csvFrames = nullptr;
   const char* csvNals = nullptr;
+  const char* csvCpb = nullptr;
   for (int i = 2; i < argc; i++) {
     if (std::strcmp(argv[i], "--frames") == 0)
       showFrames = true;
@@ -48,6 +50,10 @@ int main(int argc, char** argv) {
       csvFrames = argv[++i];
     else if (std::strcmp(argv[i], "--csv-nals") == 0 && i + 1 < argc)
       csvNals = argv[++i];
+    else if (std::strcmp(argv[i], "--cpb") == 0)
+      showCpb = true;
+    else if (std::strcmp(argv[i], "--csv-cpb") == 0 && i + 1 < argc)
+      csvCpb = argv[++i];
   }
 
   auto writeCsv = [](const char* path, const std::string& text) {
@@ -65,6 +71,23 @@ int main(int argc, char** argv) {
   };
   if (csvFrames) writeCsv(csvFrames, s.framesCsv());
   if (csvNals) writeCsv(csvNals, s.nalsCsv());
+  if (csvCpb) writeCsv(csvCpb, s.cpbCsv());
+
+  if (showCpb) {
+    const CpbModelResult& cpb = s.cpbModel();
+    std::printf(
+        "cpb valid=%d source=%s cpb_index=%d cbr=%d bit_rate_bps=%llu "
+        "cpb_size_bits=%llu initial_occupancy_bits=%.3f samples=%zu "
+        "underflows=%d first_underflow=%d overflows=%d estimated=%d "
+        "error=%s\n",
+        cpb.valid ? 1 : 0, cpb.params.source.c_str(), cpb.params.cpb_index,
+        cpb.params.cbr ? 1 : 0,
+        static_cast<unsigned long long>(cpb.params.bit_rate),
+        static_cast<unsigned long long>(cpb.params.cpb_size),
+        cpb.initial_occupancy, cpb.samples.size(), cpb.underflow_count,
+        cpb.first_underflow_index, cpb.full_events,
+        cpb.estimated_initial ? 1 : 0, cpb.error.c_str());
+  }
 
   if (showFrames) {
     std::printf("%-5s %-4s %-4s %-6s %-8s %-10s %-6s %-4s %-6s %-4s\n", "idx",

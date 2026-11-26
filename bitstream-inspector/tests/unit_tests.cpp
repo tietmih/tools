@@ -547,6 +547,148 @@ void testSeiHdr() {
   }
 }
 
+void testHrdCpb() {
+  const auto h264_sps = hexBytes(
+      "67 64 00 0d ac d9 41 41 fb 01 10 00 00 03 00 10 00 00 03 03 2e 28 "
+      "00 30 d4 00 61 ae 6c 30 07 8a 14 cb");
+  bs::Rbsp h264_rbsp =
+      bs::unescapeRbsp(h264_sps.data() + 1, h264_sps.size() - 1);
+  bs::BitReader h264_br(h264_rbsp.data.data(), h264_rbsp.data.size());
+  bs::H264Sps h264;
+  bs::parseH264Sps(h264_br, nullptr, h264);
+  CHECK(h264.valid);
+  CHECK(h264.nal_hrd.present);
+  CHECK(!h264.vcl_hrd.present);
+  CHECK_EQ(h264.nal_hrd.cpb_cnt_minus1, 0u);
+  CHECK_EQ(h264.nal_hrd.cpb.size(), 1u);
+  if (!h264.nal_hrd.cpb.empty()) {
+    CHECK_EQ(h264.nal_hrd.cpb[0].bit_rate, 400000u);
+    CHECK_EQ(h264.nal_hrd.cpb[0].cpb_size, 800000u);
+    CHECK(h264.nal_hrd.cpb[0].cbr);
+  }
+  CHECK_EQ(h264.nal_hrd.initial_cpb_removal_delay_length_minus1, 19u);
+  CHECK_EQ(h264.nal_hrd.cpb_removal_delay_length_minus1, 12u);
+  CHECK_EQ(h264.nal_hrd.dpb_output_delay_length_minus1, 6u);
+
+  const auto h265_vps = hexBytes(
+      "40 01 0c 01 ff ff 01 60 00 00 03 00 90 00 00 03 00 00 03 00 3c 95 "
+      "94 09");
+  bs::Rbsp vps_rbsp =
+      bs::unescapeRbsp(h265_vps.data() + 2, h265_vps.size() - 2);
+  bs::BitReader vps_br(vps_rbsp.data.data(), vps_rbsp.data.size());
+  bs::H265Vps vps;
+  bs::parseH265Vps(vps_br, nullptr, &vps);
+  CHECK(vps.parsed_fully);
+  CHECK_EQ(vps.max_sub_layers_minus1, 0);
+  CHECK_EQ(vps.sub_layer_ordering_info_present, true);
+  CHECK_EQ(vps.max_dec_pic_buffering_minus1.size(), 1u);
+  CHECK_EQ(vps.max_dec_pic_buffering_minus1[0], 4);
+  CHECK_EQ(vps.max_layer_id, 0);
+  CHECK_EQ(vps.num_layer_sets_minus1, 0);
+  CHECK(!vps.timing_info_present);
+
+  const auto h265_sps = hexBytes(
+      "42 01 01 01 60 00 00 03 00 90 00 00 03 00 00 03 00 3c a0 0a 08 0f "
+      "16 59 59 52 93 0b c0 5a 02 00 00 03 00 02 00 00 03 00 32 c1 49 ac "
+      "bc 00 61 a8 00 c3 59");
+  bs::Rbsp sps_rbsp =
+      bs::unescapeRbsp(h265_sps.data() + 2, h265_sps.size() - 2);
+  bs::BitReader sps_br(sps_rbsp.data.data(), sps_rbsp.data.size());
+  bs::H265Sps sps;
+  bs::parseH265Sps(sps_br, nullptr, sps);
+  CHECK(sps.parsed_fully);
+  CHECK(sps.vui_hrd_present);
+  CHECK(sps.hrd.present);
+  CHECK(sps.hrd.nal_hrd_present);
+  CHECK(!sps.hrd.vcl_hrd_present);
+  CHECK_EQ(sps.hrd.sub_layers.size(), 1u);
+  if (!sps.hrd.sub_layers.empty() && !sps.hrd.sub_layers[0].nal_cpb.empty()) {
+    CHECK_EQ(sps.hrd.sub_layers[0].nal_cpb[0].bit_rate, 400000u);
+    CHECK_EQ(sps.hrd.sub_layers[0].nal_cpb[0].cpb_size, 800000u);
+    CHECK(sps.hrd.sub_layers[0].nal_cpb[0].cbr);
+  }
+  CHECK_EQ(sps.hrd.initial_cpb_removal_delay_length_minus1, 19u);
+  CHECK_EQ(sps.hrd.au_cpb_removal_delay_length_minus1, 11u);
+  CHECK_EQ(sps.hrd.dpb_output_delay_length_minus1, 5u);
+
+  bs::CpbParams params;
+  params.bit_rate = 400000;
+  params.cpb_size = 800000;
+  params.cbr = true;
+  params.delay_bits = 13;
+  bs::CpbInitial initial;
+  initial.present = true;
+  initial.initial_delay = 161999;
+  initial.initial_offset = 18001;
+  std::vector<bs::CpbAuInput> aus(3);
+  aus[0].bits = 64000;
+  aus[0].has_removal_delay = true;
+  aus[0].removal_delay = 0;
+  aus[1].bits = 34000;
+  aus[1].has_removal_delay = true;
+  aus[1].removal_delay = 2;
+  aus[2].bits = 20000;
+  aus[2].has_removal_delay = true;
+  aus[2].removal_delay = 4;
+  bs::CpbModelResult model =
+      bs::buildCpbModel(params, initial, 1.0 / 50.0, aus);
+  CHECK(model.valid);
+  CHECK_EQ(model.samples.size(), 3u);
+  CHECK_EQ(model.underflow_count, 0);
+  CHECK(model.initial_occupancy > 0.0);
+
+  aus[2].bits = 800000;
+  model = bs::buildCpbModel(params, initial, 1.0 / 50.0, aus);
+  CHECK(model.valid);
+  CHECK(model.underflow_count > 0);
+  CHECK_EQ(model.first_underflow_index, 2);
+}
+
+void testSeiHrdPayloads() {
+  bs::SeiHrdContext ctx;
+  ctx.hevc = false;
+  ctx.has_sps = true;
+  ctx.nal_hrd = true;
+  ctx.nal_cpb_cnt_minus1 = 0;
+  ctx.initial_cpb_removal_delay_length = 20;
+  ctx.cpb_removal_delay_length = 13;
+  ctx.dpb_output_delay_length = 7;
+
+  BitWriter bp;
+  bp.ue(0);
+  bp.u(161999, 20);
+  bp.u(18001, 20);
+  std::vector<uint8_t> bp_bytes = seiMessage(0, bp.data);
+  bp_bytes.push_back(0x80);
+  bs::Rbsp bp_rbsp;
+  bp_rbsp.data = bp_bytes;
+  bs::SeiInfo bp_info;
+  bs::parseSei(bp_rbsp, nullptr, false, bp_info, &ctx);
+  CHECK(bp_info.buffering_period.present);
+  CHECK_EQ(bp_info.buffering_period.sps_id, 0);
+  CHECK_EQ(bp_info.buffering_period.nal_initial_cpb_removal_delay.size(), 1u);
+  if (!bp_info.buffering_period.nal_initial_cpb_removal_delay.empty()) {
+    CHECK_EQ(bp_info.buffering_period.nal_initial_cpb_removal_delay[0],
+             161999u);
+    CHECK_EQ(bp_info.buffering_period.nal_initial_cpb_removal_offset[0],
+             18001u);
+  }
+
+  BitWriter pt;
+  pt.u(0, 13);
+  pt.u(4, 7);
+  std::vector<uint8_t> pt_bytes = seiMessage(1, pt.data);
+  pt_bytes.push_back(0x80);
+  bs::Rbsp pt_rbsp;
+  pt_rbsp.data = pt_bytes;
+  bs::SeiInfo pt_info;
+  bs::parseSei(pt_rbsp, nullptr, false, pt_info, &ctx);
+  CHECK(pt_info.pic_timing.present);
+  CHECK(pt_info.pic_timing.has_delays);
+  CHECK_EQ(pt_info.pic_timing.cpb_removal_delay, 0u);
+  CHECK_EQ(pt_info.pic_timing.dpb_output_delay, 4u);
+}
+
 // The frame struct does not carry dimensions; the SPS does.
 void testStreamDetails() {
   const auto h264 = withStartCode(
@@ -624,6 +766,8 @@ int main() {
   testH264ParameterSets();
   testH265ParameterSets();
   testSeiHdr();
+  testHrdCpb();
+  testSeiHrdPayloads();
   testStreamDetails();
   testMalformedInput();
 

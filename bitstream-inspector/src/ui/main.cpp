@@ -46,11 +46,14 @@ enum : int {
   IDM_FILE_EXIT = 2002,
   IDM_FILE_EXPORT_FRAMES = 2003,
   IDM_FILE_EXPORT_NALS = 2004,
+  IDM_FILE_EXPORT_CPB = 2005,
   IDM_VIEW_PREV = 2101,
   IDM_VIEW_NEXT = 2102,
   IDM_VIEW_RELOAD = 2103,
   IDM_VIEW_PREV_KEY = 2104,
   IDM_VIEW_NEXT_KEY = 2105,
+  IDM_VIEW_CHART_SIZE = 2106,
+  IDM_VIEW_CHART_CPB = 2107,
   IDM_HELP_ABOUT = 2201,
   IDM_LANG_EN = 2301,
   IDM_LANG_ZH = 2302,
@@ -292,6 +295,8 @@ void createMenu(HWND hwnd) {
                  L"导出帧列表 CSV(&F)...\tCtrl+E"));
   AppendMenuW(file, MF_STRING, IDM_FILE_EXPORT_NALS,
               tr(L"Export &NAL List (CSV)...", L"导出 NAL 列表 CSV(&N)..."));
+  AppendMenuW(file, MF_STRING, IDM_FILE_EXPORT_CPB,
+              tr(L"Export &CPB Model (CSV)...", L"导出 CPB 模型 CSV(&C)..."));
   AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(file, MF_STRING, IDM_FILE_EXIT, tr(L"E&xit", L"退出(&X)"));
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file),
@@ -309,6 +314,13 @@ void createMenu(HWND hwnd) {
   AppendMenuW(
       view, MF_STRING, IDM_VIEW_NEXT_KEY,
       tr(L"Next K&eyframe\tShift+Right", L"下一个关键帧(&E)\tShift+Right"));
+  AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(view, MF_STRING, IDM_VIEW_CHART_SIZE,
+              tr(L"Chart: &Frame Size", L"图表：帧大小(&F)"));
+  AppendMenuW(view, MF_STRING, IDM_VIEW_CHART_CPB,
+              tr(L"Chart: &CPB Occupancy", L"图表：CPB 占用(&C)"));
+  CheckMenuRadioItem(view, IDM_VIEW_CHART_SIZE, IDM_VIEW_CHART_CPB,
+                     IDM_VIEW_CHART_SIZE, MF_BYCOMMAND);
   AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(view, MF_STRING, IDM_VIEW_RELOAD,
               tr(L"&Reload\tF5", L"重新加载(&R)\tF5"));
@@ -889,15 +901,21 @@ std::wstring defaultExportName(const wchar_t* suffix) {
   return name + suffix;
 }
 
-void exportCsv(bool frames) {
+enum class ExportKind { Frames, Nals, Cpb };
+
+void exportCsv(ExportKind kind) {
   if (!g_app.loaded) {
     MessageBoxW(g_app.hwnd,
                 tr(L"Open a stream before exporting.", L"请先打开码流再导出。"),
                 kTitle, MB_OK | MB_ICONINFORMATION);
     return;
   }
-  std::wstring default_name =
-      defaultExportName(frames ? L"_frames.csv" : L"_nals.csv");
+  const bool frames = kind == ExportKind::Frames;
+  const bool cpb = kind == ExportKind::Cpb;
+  const wchar_t* suffix = frames ? L"_frames.csv"
+                          : cpb  ? L"_cpb.csv"
+                                 : L"_nals.csv";
+  std::wstring default_name = defaultExportName(suffix);
   wchar_t file[32768] = {};
   lstrcpynW(file, default_name.c_str(), 32768);
 
@@ -910,22 +928,27 @@ void exportCsv(bool frames) {
   ofn.nMaxFile = 32768;
   ofn.lpstrDefExt = L"csv";
   ofn.lpstrTitle = frames ? tr(L"Export frame list", L"导出帧列表")
+                   : cpb  ? tr(L"Export CPB model", L"导出 CPB 模型")
                           : tr(L"Export NAL list", L"导出 NAL 列表");
   ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_EXPLORER;
   if (!GetSaveFileNameW(&ofn)) return;
 
   std::string data("\xEF\xBB\xBF", 3);
-  data += frames ? g_app.stream.framesCsv() : g_app.stream.nalsCsv();
+  data += frames ? g_app.stream.framesCsv()
+          : cpb  ? g_app.stream.cpbCsv()
+                 : g_app.stream.nalsCsv();
   if (!writeFileW(file, data)) {
     MessageBoxW(g_app.hwnd,
                 tr(L"Cannot write the CSV file.", L"无法写入 CSV 文件。"),
                 tr(L"Export failed", L"导出失败"), MB_OK | MB_ICONERROR);
     return;
   }
-  size_t count =
-      frames ? g_app.stream.frames().size() : g_app.stream.nals().size();
+  size_t count = frames ? g_app.stream.frames().size()
+                 : cpb  ? g_app.stream.cpbModel().samples.size()
+                        : g_app.stream.nals().size();
   std::wstring message = tr(L"Exported ", L"已导出 ") + std::to_wstring(count) +
                          (frames ? tr(L" frame rows.", L" 行帧记录。")
+                          : cpb  ? tr(L" CPB rows.", L" 行 CPB 记录。")
                                  : tr(L" NAL rows.", L" 行 NAL 记录。"));
   MessageBoxW(g_app.hwnd, message.c_str(), tr(L"Export complete", L"导出完成"),
               MB_OK | MB_ICONINFORMATION);
@@ -1040,10 +1063,25 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
           selectKeyframe(1);
           return 0;
         case IDM_FILE_EXPORT_FRAMES:
-          exportCsv(true);
+          exportCsv(ExportKind::Frames);
           return 0;
         case IDM_FILE_EXPORT_NALS:
-          exportCsv(false);
+          exportCsv(ExportKind::Nals);
+          return 0;
+        case IDM_FILE_EXPORT_CPB:
+          exportCsv(ExportKind::Cpb);
+          return 0;
+        case IDM_VIEW_CHART_SIZE:
+          g_app.chart.setMode(ChartView::ChartMode::FrameSize);
+          CheckMenuRadioItem(GetMenu(hwnd), IDM_VIEW_CHART_SIZE,
+                             IDM_VIEW_CHART_CPB, IDM_VIEW_CHART_SIZE,
+                             MF_BYCOMMAND);
+          return 0;
+        case IDM_VIEW_CHART_CPB:
+          g_app.chart.setMode(ChartView::ChartMode::Cpb);
+          CheckMenuRadioItem(GetMenu(hwnd), IDM_VIEW_CHART_SIZE,
+                             IDM_VIEW_CHART_CPB, IDM_VIEW_CHART_CPB,
+                             MF_BYCOMMAND);
           return 0;
         case IDM_VIEW_RELOAD:
           if (!g_app.path.empty()) openFile(g_app.path);

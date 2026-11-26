@@ -11,6 +11,8 @@ import os
 import subprocess
 import sys
 
+from make_underflow import inject
+
 
 def run(cmd):
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -51,7 +53,7 @@ def main():
     x265 = ["-preset", "ultrafast", "-pix_fmt", "yuv420p",
             "-x265-params", "log-level=error"]
 
-    vectors = {"raw": [], "containers": []}
+    vectors = {"gen_version": 2, "raw": [], "containers": []}
 
     # H.264 without B frames: exact frame-index decode comparison.
     h264_bf0 = encode(ff, out, "h264_bf0.mp4", "h264",
@@ -80,6 +82,26 @@ def main():
                       ["-preset", "ultrafast", "-pix_fmt", "yuv444p",
                        "-profile:v", "high444", "-bf", "0", "-f", "h264"],
                       frames=20)
+    # CBR HRD streams for the CPB0 model.
+    h264_cbr = encode(
+        ff, out, "h264_cbr.h264", "h264",
+        ["-preset", "medium", "-pix_fmt", "yuv420p", "-b:v", "400k",
+         "-maxrate", "400k", "-bufsize", "800k", "-x264-params",
+         "nal-hrd=cbr:force-cfr=1", "-f", "h264"],
+        frames=60)
+    h265_cbr = encode(
+        ff, out, "h265_cbr.h265", "h265",
+        ["-preset", "ultrafast", "-pix_fmt", "yuv420p", "-b:v", "400k",
+         "-maxrate", "400k", "-bufsize", "800k", "-x265-params",
+         "log-level=error:hrd=1:strict-cbr=1:vbv-bufsize=800:"
+         "vbv-maxrate=400:bitrate=400", "-f", "hevc"],
+        frames=60)
+    h264_underflow = os.path.join(out, "h264_cbr_underflow.h264")
+    h265_underflow = os.path.join(out, "h265_cbr_underflow.h265")
+    inject(h264_cbr, h264_underflow, "h264", before_frame=10,
+           payload_bytes=100000)
+    inject(h265_cbr, h265_underflow, "h265", before_frame=10,
+           payload_bytes=100000)
     # HDR10 mastering display and content light level SEI.
     h264_hdr = encode(
         ff, out, "h264_hdr.h264", "h264",
@@ -132,8 +154,9 @@ def main():
           ["-bsf:v", "hevc_mp4toannexb", "-f", "hevc"])
 
     raw = [h264_es, h264_b, h264_slices, h264_422, h264_long,
-           h264_interlaced, h264_444, h264_hdr, h265_es, h265_b, h265_main10,
-           h265_main12, h265_tiles, h265_hdr]
+           h264_interlaced, h264_444, h264_hdr, h264_cbr, h264_underflow,
+           h265_es, h265_b, h265_main10, h265_main12, h265_tiles, h265_hdr,
+           h265_cbr, h265_underflow]
     containers = [h264_bf0, h265_bf0]
     for src, codec, stem in ((h264_bf0, "h264", "h264_bf0"),
                              (h265_bf0, "h265", "h265_bf0")):
