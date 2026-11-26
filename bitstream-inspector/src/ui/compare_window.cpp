@@ -6,8 +6,9 @@
 #include <vector>
 
 #include "core/stream.h"
-#include "media/media_file.h"
 #include "ui/lang.h"
+#ifdef BS_HAVE_FFMPEG
+#include "media/media_file.h"
 #include "ui/ui_util.h"
 #include "ui/video_view.h"
 
@@ -228,3 +229,16 @@ void CompareWindow::open(HWND owner, HINSTANCE inst, const std::wstring& first,
 }
 
 }  // namespace ui
+
+#endif  // BS_HAVE_FFMPEG
+
+#ifndef BS_HAVE_FFMPEG
+namespace ui {
+void CompareWindow::open(HWND owner, HINSTANCE, const std::wstring&,
+                         const std::wstring&) {
+  MessageBoxW(owner,
+              tr(L"FFmpeg media layer not built", L"未构建 FFmpeg 媒体层"),
+              tr(L"Compare", L"对比"), MB_OK | MB_ICONINFORMATION);
+}
+}  // namespace ui
+#endif

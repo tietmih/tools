@@ -39,6 +39,15 @@ def remux(ffmpeg, src, dst, extra=()):
     run([ffmpeg, "-v", "error", "-y", "-i", src, "-c", "copy", *extra, dst])
 
 
+def try_remux(ffmpeg, src, dst, extra=()):
+    try:
+        remux(ffmpeg, src, dst, extra)
+        return True
+    except SystemExit:
+        print(f"skipping unsupported container: {os.path.basename(dst)}")
+        return False
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ffmpeg", default="ffmpeg")
@@ -177,11 +186,11 @@ def main():
     for src, stem in ((h264_bf0, "h264_bf0"), (h265_bf0, "h265_bf0")):
         for ext, fmt in (("avi", "avi"), ("flv", "flv")):
             dst = os.path.join(out, f"{stem}.{ext}")
-            remux(ff, src, dst, ["-f", fmt])
-            containers.append(dst)
+            if try_remux(ff, src, dst, ["-f", fmt]):
+                containers.append(dst)
     h264_mxf = os.path.join(out, "h264_bf0.mxf")
-    remux(ff, h264_bf0, h264_mxf, ["-f", "mxf"])
-    containers.append(h264_mxf)
+    if try_remux(ff, h264_bf0, h264_mxf, ["-f", "mxf"]):
+        containers.append(h264_mxf)
     for raw_path, stem in ((h264_interlaced, "h264_interlaced"),
                            (h264_444, "h264_444"),
                            (h265_main10, "h265_main10"),
