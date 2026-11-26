@@ -31,12 +31,12 @@ if [ ! -f ffbuild/config.mak ]; then
         --enable-ffmpeg --enable-ffprobe \
         --enable-avformat --enable-avcodec --enable-avutil --enable-swscale \
         --enable-avfilter \
-        --enable-demuxer=mov,matroska,mpegts,h264,hevc \
+        --enable-demuxer=mov,matroska,mpegts,h264,hevc,avi,flv,ivf,mxf,mpeg \
         --enable-decoder=h264,hevc \
         --enable-parser=h264,hevc \
         --enable-protocol=file \
         --enable-filter=select,scale,format,null \
-        --enable-muxer=image2,null,rawvideo \
+        --enable-muxer=image2,null,rawvideo,avi,flv,mxf,mpeg \
         --enable-encoder=ppm,rawvideo \
         --enable-bsf=trace_headers,h264_metadata,hevc_metadata,h264_mp4toannexb,hevc_mp4toannexb \
         --disable-network --disable-autodetect \

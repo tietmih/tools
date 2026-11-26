@@ -53,7 +53,7 @@ def main():
     x265 = ["-preset", "ultrafast", "-pix_fmt", "yuv420p",
             "-x265-params", "log-level=error"]
 
-    vectors = {"gen_version": 2, "raw": [], "containers": []}
+    vectors = {"gen_version": 3, "raw": [], "containers": []}
 
     # H.264 without B frames: exact frame-index decode comparison.
     h264_bf0 = encode(ff, out, "h264_bf0.mp4", "h264",
@@ -174,6 +174,14 @@ def main():
     h265_frag = os.path.join(out, "h265_bf0-frag.mp4")
     remux(ff, h265_bf0, h265_frag, ["-movflags", "frag_keyframe+empty_moov"])
     containers.append(h265_frag)
+    for src, stem in ((h264_bf0, "h264_bf0"), (h265_bf0, "h265_bf0")):
+        for ext, fmt in (("avi", "avi"), ("flv", "flv")):
+            dst = os.path.join(out, f"{stem}.{ext}")
+            remux(ff, src, dst, ["-f", fmt])
+            containers.append(dst)
+    h264_mxf = os.path.join(out, "h264_bf0.mxf")
+    remux(ff, h264_bf0, h264_mxf, ["-f", "mxf"])
+    containers.append(h264_mxf)
     for raw_path, stem in ((h264_interlaced, "h264_interlaced"),
                            (h264_444, "h264_444"),
                            (h265_main10, "h265_main10"),

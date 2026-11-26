@@ -34,7 +34,7 @@ if [ ! -f ffbuild/config.mak ]; then
         --disable-programs --disable-doc --disable-debug \
         --disable-everything \
         --enable-avformat --enable-avcodec --enable-avutil --enable-swscale \
-        --enable-demuxer=mov,matroska,mpegts,h264,hevc \
+        --enable-demuxer=mov,matroska,mpegts,h264,hevc,avi,flv,ivf,mxf,mpeg \
         --enable-decoder=h264,hevc \
         --enable-parser=h264,hevc \
         --enable-protocol=file \

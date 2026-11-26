@@ -33,7 +33,8 @@ Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表�
 
 ## 功能
 
-- **容器**：MP4/MOV、MPEG-TS/M2TS、Matroska/WebM，以及 Annex B 裸流
+- **容器**：MP4/MOV、MPEG-TS/M2TS、Matroska/WebM、AVI、FLV、MXF 和
+  MPEG-PS（内置 FFmpeg 支持该 codec 时可解封装），以及 Annex B 裸流
   （`.h264`/`.264`/`.avc`/`.h265`/`.265`/`.hevc`）。
 - **帧列表**：解码顺序、图像类型（IDR/I/P/B，HEVC 的 CRA/BLA）、POC、QP、
   `frame_num`、大小、slice/NAL 数量、文件偏移、显示时间。
@@ -177,7 +178,7 @@ bash ci/windows.sh
 `tests/run_tests.sh` 需要 `PATH` 中有 `ffmpeg` 和 `ffprobe` 来生成码流。执行过
 `ci/ffmpeg-host.sh` 后，参考解码、`ffprobe` 和 `trace_headers` 检查会使用与
 `mtest` 相同的固定 FFmpeg 版本，从而保持逐像素严格比较。检查内容包括帧数/图像
-类型、语法字段，以及 MP4/TS/MKV 解码帧的逐像素对比。
+类型、语法字段，以及 MP4/TS/MKV/AVI/FLV/MXF 解码帧的逐像素对比。
 
 CI 在每次推送和拉取请求时于 Linux x64/arm64 运行同样的脚本，并增加 MSVC 构建、
 覆盖率，以及原生 Windows 检查：CLI 解码、GUI 启动与语言切换、便携 ZIP、安装/
@@ -215,7 +216,7 @@ mtest stream.h264 --frame 5 --yuv frame.yuv   # 原生 planar YUV
 | 帧数和 I/P/B 计数 vs `ffprobe`（12 条流：High、Baseline、4:2:2、4:4:4、隔行/MBAFF、多 slice、长 GOP、HEVC Main、Main10、Main12、tiles/WPP） | 完全一致 |
 | 语法字段 vs FFmpeg `trace_headers`（SPS/PPS/slice：`num_ref_idx_active_override_flag`、POC、`slice_qp_delta`、tiles/WPP 标志） | 完全一致 |
 | 120 帧长 GOP 的 POC 回绕 | 120 个唯一 POC，0..238 |
-| 解码画面 vs FFmpeg 参考帧（MP4/TS/MKV/M2TS、分片 MP4） | 8-bit 逐像素一致；10/12-bit 在舍入容差内 |
+| 解码画面 vs FFmpeg 参考帧（MP4/TS/MKV/M2TS/AVI/FLV/MXF、分片 MP4） | 8-bit 逐像素一致；10/12-bit 在舍入容差内 |
 | 全部测试流跑 ASan + UBSan，变异 fuzz（CI 每轮 200、夜间 3000） | 无问题 |
 | Windows 运行时：容器打开、帧导航、分栏拖拽、CSV 导出、布局持久化 | 截图/自动化验证 |
 | CPB0 模型：x264/x265 CBR 与注入下溢 | 曲线平稳、无下溢；注入 100 KB SEI 后从第 10 帧检出 |

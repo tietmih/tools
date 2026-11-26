@@ -37,7 +37,8 @@ bool formatIsRaw(const std::string& format) {
 }
 
 bool formatIsAnnexB(const std::string& format) {
-  return formatIsRaw(format) || format.find("mpegts") != std::string::npos;
+  return formatIsRaw(format) || format.find("mpegts") != std::string::npos ||
+         format == "mpeg";
 }
 
 }  // namespace

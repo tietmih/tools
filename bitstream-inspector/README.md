@@ -37,8 +37,9 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
 
 ## Features
 
-- **Containers**: MP4/MOV, MPEG-TS/M2TS, Matroska/WebM, and Annex B elementary
-  streams (`.h264`/`.264`/`.avc`/`.h265`/`.265`/`.hevc`).
+- **Containers**: MP4/MOV, MPEG-TS/M2TS, Matroska/WebM, AVI, FLV, MXF and
+  MPEG-PS (demuxed when the bundled FFmpeg supports the codec), plus Annex B
+  elementary streams (`.h264`/`.264`/`.avc`/`.h265`/`.265`/`.hevc`).
 - **Frame list**: decode order, picture type (IDR/I/P/B, HEVC CRA/BLA), POC, QP,
   `frame_num`, size, slice/NAL counts, file offset, presentation time.
 - **Syntax tree**: every field of SPS/PPS/VPS/SEI/slice headers with exact bit
@@ -193,7 +194,7 @@ bash ci/windows.sh
 vectors. When `ci/ffmpeg-host.sh` has built the pinned FFmpeg, the reference
 decode, `ffprobe` and `trace_headers` checks use that same version as `mtest`,
 so the pixel comparison is exact. It checks frame counts and picture types,
-syntax fields, and decoded frames pixel by pixel on MP4/TS/MKV inputs.
+syntax fields, and decoded frames pixel by pixel on MP4/TS/MKV/AVI/FLV/MXF inputs.
 
 CI runs the same scripts on every push and pull request on Linux x64 and arm64,
 adds an MSVC build and coverage, and runs native Windows checks: CLI decode,
@@ -232,7 +233,7 @@ below are automated in `tests/` and run by CI on every push:
 | Frame count and I/P/B counts vs `ffprobe` (12 streams: High, Baseline, 4:2:2, 4:4:4, interlaced/MBAFF, multi-slice, long GOP, HEVC Main, Main10, Main12, tiles/WPP) | identical |
 | Syntactic fields vs FFmpeg `trace_headers` (SPS/PPS/slice: `num_ref_idx_active_override_flag`, POC, `slice_qp_delta`, tiles/WPP flags) | identical |
 | POC wrap-around on a 120-frame GOP | 120 unique POCs, 0..238 |
-| Decoded frames vs FFmpeg reference (MP4/TS/MKV/M2TS, fragmented MP4) | 8-bit pixel-identical; 10/12-bit within rounding tolerance |
+| Decoded frames vs FFmpeg reference (MP4/TS/MKV/M2TS/AVI/FLV/MXF, fragmented MP4) | 8-bit pixel-identical; 10/12-bit within rounding tolerance |
 | ASan + UBSan over all test streams, mutation fuzz (200 per CI run, 3000 nightly) | no findings |
 | Windows runtime: container open, frame navigation, splitter drag, CSV export, layout persistence | verified by screenshot/automation |
 | CPB0 model on x264/x265 CBR and injected underflow | flat occupancy, no underflow; a 100 KB SEI is detected from frame 10 |
