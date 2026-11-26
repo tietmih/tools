@@ -49,6 +49,11 @@ void VideoView::setImage(ImageData image, const std::wstring& note) {
   paintNow();
 }
 
+void VideoView::setOverlay(std::vector<bs::OverlayLine> lines) {
+  overlay_ = std::move(lines);
+  paintNow();
+}
+
 void VideoView::clear(const std::wstring& message) {
   image_ = ImageData();
   image_rect_ = {};
@@ -162,6 +167,21 @@ void VideoView::paintTo(HDC target, const RECT& rc) {
     RECT note_rc = {x + px(4), y + px(4), x + draw_w - px(4), y + px(24)};
     DrawTextW(target, note_.c_str(), -1, &note_rc,
               DT_LEFT | DT_SINGLELINE | DT_NOPREFIX);
+  }
+
+  if (!overlay_.empty() && image_.width > 0 && image_.height > 0) {
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(255, 80, 60));
+    HGDIOBJ old = SelectObject(target, pen);
+    for (const auto& line : overlay_) {
+      int x1 = x + line.x1 * draw_w / image_.width;
+      int y1 = y + line.y1 * draw_h / image_.height;
+      int x2 = x + line.x2 * draw_w / image_.width;
+      int y2 = y + line.y2 * draw_h / image_.height;
+      MoveToEx(target, x1, y1, nullptr);
+      LineTo(target, x2, y2);
+    }
+    SelectObject(target, old);
+    DeleteObject(pen);
   }
 
   if (probe_.valid) {

@@ -132,6 +132,8 @@ struct H265Pps {
   bool entropy_coding_sync_enabled = false;
   int num_tile_columns_minus1 = 0;
   int num_tile_rows_minus1 = 0;
+  std::vector<int> tile_column_widths;
+  std::vector<int> tile_row_heights;
   bool uniform_spacing = true;
   bool loop_filter_across_tiles_enabled = false;
   bool loop_filter_across_slices_enabled = false;

@@ -324,10 +324,12 @@ void parseH264Pps(BitReader& br, SyntaxBuilder* sb, H264Pps& pps,
   }
   if (pps.num_slice_groups_minus1 > 0) {
     uint32_t map_type = r.ue("slice_group_map_type");
+    pps.slice_group_map_type = static_cast<int>(map_type);
     if (map_type == 0) {
       for (int i = 0; i <= pps.num_slice_groups_minus1; i++) {
         std::string name = "run_length_minus1[" + std::to_string(i) + "]";
-        r.ue(name.c_str());
+        pps.slice_group_run_length.push_back(
+            static_cast<int>(r.ue(name.c_str())));
       }
     } else if (map_type == 2) {
       for (int i = 0; i < pps.num_slice_groups_minus1; i++) {
@@ -351,7 +353,8 @@ void parseH264Pps(BitReader& br, SyntaxBuilder* sb, H264Pps& pps,
         bits++;
       for (uint32_t i = 0; i <= num && !r.fail(); i++) {
         std::string name = "slice_group_id[" + std::to_string(i) + "]";
-        r.u(static_cast<int>(bits), name.c_str());
+        pps.slice_group_ids.push_back(
+            static_cast<int>(r.u(static_cast<int>(bits), name.c_str())));
       }
     } else {
       r.error("slice_group_map_type out of range");

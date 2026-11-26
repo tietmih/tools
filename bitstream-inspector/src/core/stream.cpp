@@ -398,6 +398,7 @@ void Stream::analyzeH264(std::string& error) {
           have_frame = true;
         }
         cur.slice_count++;
+        cur.slice_addresses.push_back(info.first_mb_in_slice);
         cur.slice_header_bits += info.header_bits;
         cur.byte_size = (n.payload_off + n.size) - cur.byte_offset;
         cur.nal_count++;
@@ -573,6 +574,7 @@ void Stream::analyzeH265(std::string& error) {
           have_frame = true;
         }
         cur.slice_count++;
+        cur.slice_addresses.push_back(info.slice_segment_address);
         cur.slice_header_bits += info.header_bits;
         cur.byte_size = (n.payload_off + n.size) - cur.byte_offset;
         cur.nal_count++;
@@ -882,6 +884,66 @@ double Stream::windowBitrate(int start_frame, int end_frame) const {
     duration = static_cast<double>(end_frame - start_frame) / fps();
   if (duration <= 0.0) return 0.0;
   return static_cast<double>(bits) / duration;
+}
+
+std::vector<OverlayLine> Stream::sliceOverlay(int frame_index) const {
+  std::vector<OverlayLine> lines;
+  if (frame_index < 0 || frame_index >= static_cast<int>(frames_.size()))
+    return lines;
+  const FrameInfo& frame = frames_[static_cast<size_t>(frame_index)];
+  if (codec_ == Codec::H264 && h264_.have_sps) {
+    const H264Sps& sps = h264_.sps;
+    const int mb_w = sps.pic_width_in_mbs_minus1 + 1;
+    const int mb_h =
+        (sps.pic_height_in_map_units_minus1 + 1) * (sps.frame_mbs_only ? 1 : 2);
+    const int width = sps.width();
+    const int height = sps.height();
+    for (int address : frame.slice_addresses) {
+      if (address <= 0 || address >= mb_w * mb_h) continue;
+      const int row = address / mb_w;
+      const int col = address % mb_w;
+      lines.push_back({0, row * 16, width, row * 16});
+      if (col > 0) lines.push_back({col * 16, 0, col * 16, height});
+    }
+    return lines;
+  }
+  if (codec_ == Codec::H265 && h265_.have_sps) {
+    const H265Sps& sps = h265_.sps;
+    const int ctb = sps.ctb_size();
+    const int ctb_w = (sps.width + ctb - 1) / ctb;
+    const int ctb_h = (sps.height + ctb - 1) / ctb;
+    const int width = sps.display_width();
+    const int height = sps.display_height();
+    for (int address : frame.slice_addresses) {
+      if (address <= 0 || address >= ctb_w * ctb_h) continue;
+      const int row = address / ctb_w;
+      const int col = address % ctb_w;
+      lines.push_back({0, row * ctb, width, row * ctb});
+      if (col > 0) lines.push_back({col * ctb, 0, col * ctb, height});
+    }
+    if (h265_.have_pps && h265_.pps.tiles_enabled) {
+      const int cols = h265_.pps.num_tile_columns_minus1 + 1;
+      const int rows = h265_.pps.num_tile_rows_minus1 + 1;
+      int x = 0;
+      for (int i = 0; i < cols - 1; i++) {
+        const int w =
+            h265_.pps.uniform_spacing
+                ? ctb_w / cols
+                : h265_.pps.tile_column_widths[static_cast<size_t>(i)];
+        x += w * ctb;
+        lines.push_back({x, 0, x, height});
+      }
+      int y = 0;
+      for (int i = 0; i < rows - 1; i++) {
+        const int h = h265_.pps.uniform_spacing
+                          ? ctb_h / rows
+                          : h265_.pps.tile_row_heights[static_cast<size_t>(i)];
+        y += h * ctb;
+        lines.push_back({0, y, width, y});
+      }
+    }
+  }
+  return lines;
 }
 
 void Stream::computeDisplayOrder() {

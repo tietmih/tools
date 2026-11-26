@@ -736,9 +736,11 @@ void parseH265Pps(BitReader& br, SyntaxBuilder* sb, H265Pps& pps) {
         return;
       }
       for (int i = 0; i < pps.num_tile_columns_minus1; i++)
-        r.ue("column_width_minus1");
+        pps.tile_column_widths.push_back(
+            static_cast<int>(r.ue("column_width_minus1")) + 1);
       for (int i = 0; i < pps.num_tile_rows_minus1; i++)
-        r.ue("row_height_minus1");
+        pps.tile_row_heights.push_back(
+            static_cast<int>(r.ue("row_height_minus1")) + 1);
     }
     r.flag("loop_filter_across_tiles_enabled_flag",
            pps.loop_filter_across_tiles_enabled);

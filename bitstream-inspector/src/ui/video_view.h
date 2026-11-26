@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "core/stream.h"
 #include "core/yuv.h"
 
 namespace ui {
@@ -30,6 +31,7 @@ class VideoView {
   void create(HWND parent, HINSTANCE inst, int id);
   HWND hwnd() const { return hwnd_; }
   void setImage(ImageData image, const std::wstring& note);
+  void setOverlay(std::vector<bs::OverlayLine> lines);
   void clear(const std::wstring& message = L"");
   void paintNow();
   const ImageData& image() const { return image_; }
@@ -59,6 +61,7 @@ class VideoView {
   RECT image_rect_ = {};
   Probe probe_;
   bool tracking_ = false;
+  std::vector<bs::OverlayLine> overlay_;
   std::wstring note_;
   std::wstring message_;
 };

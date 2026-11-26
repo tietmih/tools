@@ -29,6 +29,13 @@ struct FrameRefs {
   bool computed = false;
 };
 
+struct OverlayLine {
+  int x1 = 0;
+  int y1 = 0;
+  int x2 = 0;
+  int y2 = 0;
+};
+
 struct BitAllocation {
   uint64_t parameter_sets = 0;
   uint64_t sei = 0;
@@ -65,6 +72,7 @@ struct FrameInfo {
   H265SliceInfo h265_slice;
   FrameRefs refs;
   BitAllocation bits;
+  std::vector<int> slice_addresses;
   // Filled in when the stream came from a container (or a demuxer with timing).
   int64_t pts = 0;
   int64_t dts = 0;
@@ -124,6 +132,7 @@ class Stream {
   std::string cpbCsv() const;
   std::string bitAllocationCsv() const;
   double windowBitrate(int start_frame, int end_frame) const;
+  std::vector<OverlayLine> sliceOverlay(int frame_index) const;
 
   std::string streamSummary() const;
   double fps() const;

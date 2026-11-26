@@ -54,6 +54,8 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
   or CPB0 occupancy. Click to jump.
 - **References**: a Refs tab lists the selected frame's L0/L1 POCs, DPB count
   and missing references; double-clicking a reference jumps to that frame.
+- **Overlays**: an optional slice/CTB boundary overlay on the video tab; H.265
+  tile boundaries come from the PPS layout.
 - **Thumbnails**: lazy, cached thumbnail strip with GOP boundaries; prev/next
   GOP navigation.
 - **Navigation**: previous/next frame, previous/next keyframe, previous/next
@@ -244,6 +246,7 @@ below are automated in `tests/` and run by CI on every push:
 | Raw ES exact frame vs ffmpeg (GOP start decode) | frame 5 pixel-identical, including B pictures |
 | Native YUV export vs ffmpeg rawvideo (8/10-bit) | byte-identical planes |
 | DPB/reference lists | L0/L1 populated on H.264/H.265 B-frame vectors; missing-reference path covered |
+| Slice/tile overlay | multi-slice H.264 geometry checked; H.265 tile vector unavailable in the installed encoder |
 | Thumbnail strip and GOP navigation | window creation checked by the Windows smoke test; thumbnail loading is manual |
 | Windows installer: default, custom `/D=`, `/LANG=2052`, upgrade from 0.3.0, silent uninstall | files, shortcuts, HKCU entry, version hand-off and clean removal verified |
 | Runtime language switch: English ↔ 简体中文, restart persistence | verified by automation/screenshot |
@@ -256,7 +259,7 @@ containers.
 - Raw elementary streams have no timestamps; the video tab decodes from the
   GOP start to show the exact selected picture, including B pictures. Field
   pictures are shown as separate pictures.
-- No slice/CTU overlay, DPB/GOP graph, or macroblock-level entropy decoding yet.
+- No DPB/GOP graph or macroblock-level entropy decoding yet.
 - The CPB model covers CPB0 from SPS VUI HRD; sub-picture, multiple CPBs and
   concatenation are not modelled. Missing delays are marked as estimated, and
   streams without HRD get a labelled average-bitrate estimate.

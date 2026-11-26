@@ -63,6 +63,7 @@ enum : int {
   IDM_VIEW_CHART_SIZE = 2106,
   IDM_VIEW_CHART_CPB = 2107,
   IDM_VIEW_CHART_BITS = 2117,
+  IDM_VIEW_OVERLAY = 2118,
   IDM_VIEW_MATRIX_AUTO = 2108,
   IDM_VIEW_MATRIX_601 = 2109,
   IDM_VIEW_MATRIX_709 = 2110,
@@ -151,6 +152,7 @@ struct App {
   float tree_ratio = 0.55f;
   int preview_matrix = -1;  // -1 = VUI/auto
   int preview_range = -1;   // -1 = VUI, 0 = limited, 1 = full
+  bool show_overlay = false;
   int drag = 0;
   int drag_offset = 0;
   RECT split_left = {};
@@ -396,6 +398,9 @@ void createMenu(HWND hwnd) {
               tr(L"Chart: &CPB Occupancy", L"图表：CPB 占用(&C)"));
   AppendMenuW(view, MF_STRING, IDM_VIEW_CHART_BITS,
               tr(L"Chart: &Bit Allocation", L"图表：比特分配(&B)"));
+  AppendMenuW(view, MF_STRING | (g_app.show_overlay ? MF_CHECKED : 0),
+              IDM_VIEW_OVERLAY,
+              tr(L"Slice/&Tile Overlay", L"Slice/Tile 叠加(&T)"));
   CheckMenuRadioItem(view, IDM_VIEW_CHART_SIZE, IDM_VIEW_CHART_CPB,
                      IDM_VIEW_CHART_SIZE, MF_BYCOMMAND);
 
@@ -1464,6 +1469,17 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
           return 0;
         case IDM_VIEW_CHART_BITS:
           g_app.chart.setMode(ChartView::ChartMode::Bits);
+          return 0;
+        case IDM_VIEW_OVERLAY:
+          g_app.show_overlay = !g_app.show_overlay;
+          CheckMenuItem(
+              GetMenu(hwnd), IDM_VIEW_OVERLAY,
+              MF_BYCOMMAND | (g_app.show_overlay ? MF_CHECKED : MF_UNCHECKED));
+          if (g_app.loaded && g_app.current_frame >= 0)
+            g_app.video_view.setOverlay(
+                g_app.show_overlay
+                    ? g_app.stream.sliceOverlay(g_app.current_frame)
+                    : std::vector<OverlayLine>());
           return 0;
         case IDM_VIEW_RELOAD:
           if (!g_app.path.empty()) openFile(g_app.path);

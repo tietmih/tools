@@ -82,9 +82,12 @@ static void printStreamJson(const Stream& s, const char* path, long treeIndex) {
     std::printf(
         "{\"index\":%d,\"type\":\"%s\",\"poc\":%d,\"qp\":%d,"
         "\"size\":%zu,\"offset\":%zu,\"slices\":%d,\"nals\":%d,"
-        "\"dpb\":%d,\"l0\":[",
+        "\"dpb\":%d,\"slice_addresses\":[",
         f.index, s.frameTypeName(f).c_str(), f.poc, f.qp, f.byte_size,
         f.byte_offset, f.slice_count, f.nal_count, f.refs.dpb_count);
+    for (size_t k = 0; k < f.slice_addresses.size(); k++)
+      std::printf("%s%d", k ? "," : "", f.slice_addresses[k]);
+    std::printf("],\"l0\":[");
     for (size_t k = 0; k < f.refs.l0_pocs.size(); k++)
       std::printf("%s%d", k ? "," : "", f.refs.l0_pocs[k]);
     std::printf("],\"l1\":[");
@@ -165,7 +168,8 @@ int main(int argc, char** argv) {
     std::fprintf(stderr,
                  "usage: bsinfo <file.h264|file.h265> [--frames] [--tree "
                  "<nal-index>] [--cpb] [--refs] [--json] [--batch <dir>] "
-                 "[--csv-cpb <path>] [--bits] [--csv-bits <path>]\n");
+                 "[--csv-cpb <path>] [--bits] [--csv-bits <path>] "
+                 "[--overlay]\n");
     return 2;
   }
   Stream s;
@@ -178,6 +182,7 @@ int main(int argc, char** argv) {
   bool showCpb = false;
   bool showRefs = false;
   bool showBits = false;
+  bool showOverlay = false;
   bool json = false;
   long treeIndex = -1;
   const char* csvFrames = nullptr;
@@ -199,6 +204,8 @@ int main(int argc, char** argv) {
       showRefs = true;
     else if (std::strcmp(argv[i], "--json") == 0)
       json = true;
+    else if (std::strcmp(argv[i], "--overlay") == 0)
+      showOverlay = true;
     else if (std::strcmp(argv[i], "--bits") == 0)
       showBits = true;
     else if (std::strcmp(argv[i], "--csv-bits") == 0 && i + 1 < argc)
@@ -232,6 +239,13 @@ int main(int argc, char** argv) {
   if (csvNals) writeCsv(csvNals, s.nalsCsv());
   if (csvCpb) writeCsv(csvCpb, s.cpbCsv());
   if (csvBits) writeCsv(csvBits, s.bitAllocationCsv());
+
+  if (showOverlay) {
+    for (const auto& f : s.frames()) {
+      std::printf("overlay %d %c lines=%zu\n", f.index, f.picture_type,
+                  s.sliceOverlay(f.index).size());
+    }
+  }
 
   if (showBits) {
     for (const auto& f : s.frames()) {
@@ -300,7 +314,8 @@ int main(int argc, char** argv) {
     for (const auto& r : tree) printTree(r, 0);
   }
 
-  if (treeIndex < 0 && !showFrames && !showCpb && !showRefs && !showBits) {
+  if (treeIndex < 0 && !showFrames && !showCpb && !showRefs && !showBits &&
+      !showOverlay) {
     for (size_t i = 0; i < s.nals().size(); i++) {
       const NalEntry& e = s.nals()[i];
       std::printf("[%4zu] off=%-9zu size=%-7zu type=%-3d %-32s %s%s%s\n", i,

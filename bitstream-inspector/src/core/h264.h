@@ -100,6 +100,9 @@ struct H264Pps {
   bool entropy_coding_mode = false;  // CABAC
   bool bottom_field_pic_order_in_frame_present = false;
   int num_slice_groups_minus1 = 0;
+  int slice_group_map_type = 0;
+  std::vector<int> slice_group_run_length;
+  std::vector<int> slice_group_ids;
   int num_ref_idx_l0_default_active_minus1 = 0;
   int num_ref_idx_l1_default_active_minus1 = 0;
   bool weighted_pred = false;
