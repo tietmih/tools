@@ -24,12 +24,19 @@ jobs:
       - name: Install linters
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends shellcheck
+          sudo apt-get install -y --no-install-recommends python3-venv shellcheck
           curl -fsSL -o "$RUNNER_TEMP/actionlint.tgz" \
             https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tgz" |
             sha256sum -c -
           tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+      - name: Install clang-format
+        run: |
+          # Pinned to the version in the repository .clang-format header so
+          # local and CI formatting agree.
+          python3 -m venv "$RUNNER_TEMP/format"
+          "$RUNNER_TEMP/format/bin/pip" install --disable-pip-version-check \
+            --no-cache-dir clang-format==21.1.8
       - name: Bilingual documentation
         run: python3 scripts/check_bilingual.py
       - name: Documentation links
@@ -40,6 +47,14 @@ jobs:
           npx --yes markdownlint-cli2@0.24.2 "${docs[@]}"
       - name: Repository hygiene
         run: python3 scripts/check_repo_hygiene.py
+      - name: C/C++ formatting
+        run: |
+          while IFS= read -r tool; do
+            if [ -x "$tool/ci/format.sh" ]; then
+              CLANG_FORMAT="$RUNNER_TEMP/format/bin/clang-format" \
+                bash "$tool/ci/format.sh"
+            fi
+          done < <(jq -r '.tools[].name' .github/tools.json)
       - name: Version consistency
         run: |
           while IFS= read -r tool; do
@@ -49,7 +64,7 @@ jobs:
           done < <(jq -r '.tools[].name' .github/tools.json)
       - name: Shell scripts
         run: |
-          mapfile -t scripts < <(git ls-files '*.sh')
+          mapfile -t scripts < <(git ls-files '*.sh' '.githooks/*')
           if [ ${#scripts[@]} -gt 0 ]; then
             shellcheck "${scripts[@]}"
           fi

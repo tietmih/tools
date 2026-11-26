@@ -1,0 +1,10 @@
+# Pinned in .github/workflows/repo-checks.yml (clang-format 21.1.8).
+# Google C++ style: 2-space indent, 80 columns, attached braces, left-aligned
+# pointers, sorted includes, reflowed comments.
+# Include blocks stay as written: Win32 headers require <windows.h> before the
+# other system headers, and regrouping would sort it to the end.
+---
+Language: Cpp
+Standard: c++17
+BasedOnStyle: Google
+IncludeBlocks: Preserve

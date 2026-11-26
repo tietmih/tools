@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Check staged C/C++ sources with clang-format before committing.
+# Enable once per clone: git config core.hooksPath .githooks
+set -euo pipefail
+
+REPO=$(git rev-parse --show-toplevel)
+CLANG_FORMAT=${CLANG_FORMAT:-clang-format}
+STYLE="$REPO/.clang-format"
+
+mapfile -t files < <(
+    git diff --cached --name-only --diff-filter=ACMR -- \
+        '*.c' '*.cc' '*.cpp' '*.h' '*.hpp'
+)
+if [ ${#files[@]} -eq 0 ]; then
+    exit 0
+fi
+
+command -v "$CLANG_FORMAT" >/dev/null 2>&1 || {
+    echo "error: clang-format not found (expected 21.1.8)" >&2
+    exit 1
+}
+
+version=$("$CLANG_FORMAT" --version 2>/dev/null || true)
+case "$version" in
+    *21.1.8*) ;;
+    *) echo "warning: $version; CI pins clang-format 21.1.8" >&2 ;;
+esac
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+failed=()
+for file in "${files[@]}"; do
+    mkdir -p "$tmp/$(dirname "$file")"
+    git show ":$file" > "$tmp/$file"
+    if ! "$CLANG_FORMAT" --dry-run --Werror --style=file:"$STYLE" \
+        "$tmp/$file" >/dev/null 2>&1; then
+        failed+=("$file")
+    fi
+done
+
+if [ ${#failed[@]} -gt 0 ]; then
+    echo "clang-format violations in staged files:" >&2
+    printf '  %s\n' "${failed[@]}" >&2
+    tool=${failed[0]%%/*}
+    echo "run: bash $tool/ci/format.sh --fix and stage the result" >&2
+    exit 1
+fi

@@ -8,14 +8,14 @@ GitHub Actions 是唯一的构建和发布路径。工作流位于 `.github/work
 | 工作流 | 触发条件 | 内容 |
 |---|---|---|
 | `ci.yml` | 涉及工具、`scripts/` 或工作流的推送/PR | 从 `tools.json` 自动发现工具，运行 Linux x64/arm64、Windows 交叉构建、原生 Windows 冒烟、MSVC 和覆盖率 |
-| `repo-checks.yml` | 每次推送/PR | 双语文档配对、链接/锚点、受版本库文件卫生（禁止二进制/媒体/构建产物）、版本–CHANGELOG–README 一致性、shellcheck、markdownlint、Python 语法、actionlint |
+| `repo-checks.yml` | 每次推送/PR | 双语文档配对、链接/锚点、受版本库文件卫生（禁止二进制/媒体/构建产物）、C/C++ 格式、版本–CHANGELOG–README 一致性、shellcheck、markdownlint、Python 语法、actionlint |
 | `static-analysis.yml` | 代码变更 | 对解析器、媒体层、命令行工具和单元测试跑 cppcheck 与 clang-tidy analyzer 检查 |
 | `release.yml` | tag `<tool>-v<version>` 或手动 | 校验注释 tag、版本和双语文档，重跑测试、构建安装包、生成 provenance 并发布 Release；手动触发可传 `publish: false` 做 dry-run |
 | `dependency-check.yml` | 每周/手动 | 对比 `ci/deps.env` 与上游 FFmpeg，报告 runner 工具链，创建/更新跟踪 issue |
 | `nightly.yml` | 每天/手动 | 用 ASan/UBSan 构建解析器并跑 3000 轮变异 fuzz |
 
-`ci.yml` 忽略 tag 推送（`tags-ignore`）并使用 paths 过滤，因此只改文档时只运行
-`repo-checks.yml`，不会跑构建矩阵。
+`ci.yml` 只在分支推送时运行（`branches: ["**"]`，不响应 tag），并使用 paths
+过滤，因此只改文档时只运行 `repo-checks.yml`，不会跑构建矩阵。
 
 ## 工具约定
 
@@ -24,6 +24,7 @@ GitHub Actions 是唯一的构建和发布路径。工作流位于 `.github/work
 - `ci/linux.sh release|asan` —— 主机构建与回归测试（或覆盖率）。
 - `ci/windows.sh [version]` —— 交叉构建及安装包/便携包。
 - `ci/check-version.sh [expected]` —— 校验版本字面量与 CMake 一致。
+- `ci/format.sh [--fix]` —— clang-format 检查；`--fix` 直接重排源码。
 - `ci/windows-smoke.ps1` —— 原生 GUI/安装器/便携包检查，在 `windows-2022` 运行。
 - `ci/msvc.ps1` —— MSVC 编译和单元测试。
 - `ci/coverage.sh` —— 插桩构建、测试和 gcovr 报告。
@@ -32,6 +33,28 @@ GitHub Actions 是唯一的构建和发布路径。工作流位于 `.github/work
 
 新增工具只需添加这些脚本并在 `tools.json` 登记，工作流会自动发现。空工具分类使用
 `(none)` 哨兵，避免矩阵为空报错。
+
+## 代码格式
+
+C/C++ 源码通过仓库根目录的 `.clang-format` 使用 Google 风格：2 空格缩进、
+80 列、括号紧贴、指针靠左、include 排序、注释自动重排。include 分组保持不变，
+以便 Win32 源码把 `<windows.h>` 放在 `commctrl.h` 之前。编辑器默认值见
+`.editorconfig`。
+
+每个工具提供 `ci/format.sh [--fix]`。CI 使用固定版本 clang-format 21.1.8
+（见 `repo-checks.yml`）以检查模式运行；本地版本不同可能产生不同换行，建议安装固定版本：
+
+```bash
+pipx install clang-format==21.1.8
+bash bitstream-inspector/ci/format.sh --fix
+```
+
+每个克隆执行一次即可启用 pre-commit 钩子；它校验暂存区中每个 C/C++ 文件的内容，
+发现格式违规时阻止提交：
+
+```bash
+git config core.hooksPath .githooks
+```
 
 ## 依赖
 

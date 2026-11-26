@@ -8,15 +8,16 @@ GitHub Actions is the only build and release path. Workflows live in
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` | push/PR touching a tool, `scripts/`, or a workflow | Discovers tools from `tools.json`, builds FFmpeg once in a `deps` job, then runs the Linux x64/arm64 suites, Windows cross-build, native Windows smoke test and MSVC build on `windows-2022` and `windows-2025`, plus coverage |
-| `repo-checks.yml` | every push/PR | Bilingual doc pairing, link/anchor checks, tracked-file hygiene (no binaries/media/build output), version–CHANGELOG–README consistency, shellcheck, markdownlint, Python syntax, actionlint |
+| `repo-checks.yml` | every push/PR | Bilingual doc pairing, link/anchor checks, tracked-file hygiene (no binaries/media/build output), C/C++ formatting, version–CHANGELOG–README consistency, shellcheck, markdownlint, Python syntax, actionlint |
 | `static-analysis.yml` | code changes | cppcheck and clang-tidy analyzer checks for the parser, media layer, CLI and unit tests |
 | `release.yml` | tag `<tool>-v<version>`, or manual dispatch | Validates the annotated tag, version and bilingual notes, re-runs tests, builds the package, attests provenance and publishes the GitHub Release. Manual dispatch accepts `publish: false` for a dry run |
 | `dependency-check.yml` | weekly/manual | Compares `ci/deps.env` with upstream FFmpeg and reports the runner toolchain; opens or updates a tracking issue |
 | `release-audit.yml` | daily/manual | Verifies every `<tool>-v*` tag has a Release with installer, portable ZIP, SBOM and a passing `SHA256SUMS`; opens or updates an issue on failure |
 | `nightly.yml` | daily/manual | Builds the parser with ASan/UBSan and runs 3000 mutation-fuzz iterations |
 
-`ci.yml` ignores tag pushes (`tags-ignore`) and uses path filters, so
-documentation-only changes run `repo-checks.yml` but not the build matrix.
+`ci.yml` runs on branch pushes only (`branches: ["**"]`, no tag trigger) and
+uses path filters, so documentation-only changes run `repo-checks.yml` but not
+the build matrix.
 
 ## Tool contract
 
@@ -25,6 +26,7 @@ Every directory listed in `.github/tools.json` provides:
 - `ci/linux.sh release|asan` — host build and regression suite (or coverage).
 - `ci/windows.sh [version]` — cross-build plus installer/portable package.
 - `ci/check-version.sh [expected]` — version literals consistent with CMake.
+- `ci/format.sh [--fix]` — clang-format check; `--fix` rewrites the sources.
 - `ci/windows-smoke.ps1` — native GUI/installer/portable checks; invoked on
   `windows-2022`.
 - `ci/msvc.ps1` — MSVC compile and unit tests.
@@ -36,6 +38,30 @@ Every directory listed in `.github/tools.json` provides:
 Adding a tool means adding those scripts and a `tools.json` entry; the
 workflows pick it up automatically. Empty tool categories use a `(none)`
 sentinel so the matrix never becomes empty.
+
+## Code formatting
+
+C and C++ sources use Google style through the repository-root `.clang-format`:
+two-space indent, 80-column limit, attached braces, left-aligned pointers,
+sorted includes and reflowed comments. Include blocks keep their grouping so
+Win32 sources can keep `<windows.h>` ahead of `commctrl.h`. Editor defaults
+live in `.editorconfig`.
+
+Every tool provides `ci/format.sh [--fix]`. CI runs it in check mode with
+clang-format 21.1.8, pinned in `repo-checks.yml`; another version may wrap code
+differently, so install the pinned one locally:
+
+```bash
+pipx install clang-format==21.1.8
+bash bitstream-inspector/ci/format.sh --fix
+```
+
+Enable the pre-commit hook once per clone. It checks the staged content of
+every C/C++ file and blocks the commit on a violation:
+
+```bash
+git config core.hooksPath .githooks
+```
 
 ## Dependencies
 
