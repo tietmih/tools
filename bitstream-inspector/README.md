@@ -60,7 +60,8 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
   metadata consistency (MaxCLL/MaxFALL vs mastering display, HDR10+ vs PQ).
 - **YUV Viewer**: File > YUV Viewer opens a standalone raw planar YUV viewer
   with I420/I422/I444/P010/P210/P012/P212, matrix/range selection and frame
-  navigation.
+  navigation; a second file can be opened for side-by-side or difference
+  comparison with PSNR/SSIM.
 - **Quality**: File > Load Reference YUV computes per-frame PSNR/SSIM/MSE/MSAD for the
   open stream; the quality chart and a reference difference view show the
   result, and the metrics export as CSV. The reference must be planar

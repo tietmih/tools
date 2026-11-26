@@ -32,6 +32,9 @@ constexpr int IDC_PREV = 3207;
 constexpr int IDC_NEXT = 3208;
 constexpr int IDC_STATUS = 3209;
 constexpr int IDC_VIEW = 3210;
+constexpr int IDC_OPEN_B = 3211;
+constexpr int IDC_VIEW_B = 3212;
+constexpr int IDC_MODE = 3213;
 
 struct State {
   HINSTANCE inst = nullptr;
@@ -45,10 +48,17 @@ struct State {
   HWND prev = nullptr;
   HWND next = nullptr;
   HWND status = nullptr;
+  HWND open_b = nullptr;
+  HWND mode = nullptr;
   VideoView view;
+  VideoView view_b;
   bs::ReferenceYuv yuv;
+  bs::ReferenceYuv yuv_b;
   std::vector<uint8_t> storage;
+  std::vector<uint8_t> storage_b;
   std::wstring path;
+  std::wstring path_b;
+  int view_mode = 0;  // 0 = single, 1 = side by side, 2 = difference
   int frame = 0;
   int default_width = 1920;
   int default_height = 1080;
@@ -62,14 +72,19 @@ struct State {
                                   std::to_wstring(yuv.frameCount()) + L"   " +
                                   std::to_wstring(yuv.width()) + L"x" +
                                   std::to_wstring(yuv.height());
+    if (yuv_b.isOpen()) {
+      text += L"   |   ";
+      size_t dot = path_b.find_last_of(L"\\/");
+      text += dot == std::wstring::npos ? path_b : path_b.substr(dot + 1);
+    }
     SetWindowTextW(status, text.c_str());
   }
 
   bool renderFrame() {
     if (!yuv.isOpen()) return false;
-    bs::YuvFrameView view;
+    bs::YuvFrameView view_a;
     std::string error;
-    if (!yuv.readFrame(frame, storage, view, error)) {
+    if (!yuv.readFrame(frame, storage, view_a, error)) {
       this->view.clear(wide(error));
       return false;
     }
@@ -79,7 +94,7 @@ struct State {
         matrix_index == 1 ? 5 : (matrix_index == 3 ? 9 : 1);
     const bool full_range = SendMessageW(range, CB_GETCURSEL, 0, 0) == 1;
     std::vector<uint8_t> bgra;
-    if (!bs::yuvToBgra(view, matrix_value, full_range, bgra, error)) {
+    if (!bs::yuvToBgra(view_a, matrix_value, full_range, bgra, error)) {
       this->view.clear(wide(error));
       return false;
     }
@@ -92,9 +107,87 @@ struct State {
     image.layout = yuv.layout();
     image.matrix = matrix_value;
     image.full_range = full_range;
-    this->view.setImage(std::move(image), tr(L"YUV Viewer", L"YUV 查看器"));
+    if (view_mode == 0 || !yuv_b.isOpen()) {
+      this->view.setImage(std::move(image), tr(L"YUV Viewer", L"YUV 查看器"));
+      updateStatus();
+      return true;
+    }
+    bs::YuvFrameView view_b;
+    if (!yuv_b.readFrame(frame, storage_b, view_b, error)) {
+      this->view_b.clear(wide(error));
+      updateStatus();
+      return false;
+    }
+    if (view_mode == 1) {
+      this->view.setImage(std::move(image), L"A");
+      std::vector<uint8_t> bgra_b;
+      if (!bs::yuvToBgra(view_b, matrix_value, full_range, bgra_b, error)) {
+        this->view_b.clear(wide(error));
+        return false;
+      }
+      ImageData image_b;
+      image_b.bgra = std::move(bgra_b);
+      image_b.width = yuv_b.width();
+      image_b.height = yuv_b.height();
+      this->view_b.setImage(std::move(image_b), L"B");
+    } else {
+      bs::QualityMetrics metrics;
+      std::string quality_error;
+      if (yuv.width() == yuv_b.width() && yuv.height() == yuv_b.height() &&
+          yuv.bitDepth() == yuv_b.bitDepth() &&
+          yuv.chromaFormat() == yuv_b.chromaFormat() &&
+          bs::computeQuality(view_a, view_b, metrics, quality_error)) {
+        wchar_t text[96];
+        swprintf(text, 96, L"A/B  PSNR %.2f dB  SSIM %.4f", metrics.psnr_avg,
+                 metrics.ssim);
+        this->view.setImage(std::move(image), text);
+        std::vector<uint8_t> diff;
+        bs::makeDiffImage(view_a, view_b, diff);
+        ImageData diff_image;
+        diff_image.bgra = std::move(diff);
+        diff_image.width = yuv.width();
+        diff_image.height = yuv.height();
+        this->view_b.setImage(std::move(diff_image),
+                              tr(L"difference", L"差异"));
+      } else {
+        this->view_b.clear(tr(L"frames do not match", L"帧不匹配"));
+      }
+    }
     updateStatus();
     return true;
+  }
+
+  void openFileB() {
+    if (!yuv.isOpen()) {
+      MessageBoxW(hwnd,
+                  tr(L"Open the first YUV file before the second one.",
+                     L"请先打开第一个 YUV 文件。"),
+                  tr(L"YUV Viewer", L"YUV 查看器"), MB_OK | MB_ICONINFORMATION);
+      return;
+    }
+    wchar_t file[32768] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = tr(L"Raw YUV (*.yuv)\0*.yuv\0All files (*.*)\0*.*\0",
+                         L"原始 YUV (*.yuv)\0*.yuv\0所有文件 (*.*)\0*.*\0");
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = 32768;
+    ofn.lpstrDefExt = L"yuv";
+    ofn.lpstrTitle = tr(L"Open second raw YUV", L"打开第二个原始 YUV");
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER;
+    if (!GetOpenFileNameW(&ofn)) return;
+    std::string error;
+    if (!yuv_b.open(utf8(file), yuv.layout(), yuv.width(), yuv.height(),
+                    error)) {
+      MessageBoxW(hwnd, wide(error).c_str(),
+                  tr(L"YUV open failed", L"YUV 打开失败"),
+                  MB_OK | MB_ICONERROR);
+      return;
+    }
+    path_b = file;
+    frame = 0;
+    renderFrame();
   }
 
   void openFile() {
@@ -238,15 +331,36 @@ LRESULT CALLBACK yuvProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
       MoveWindow(state->status, pad + px(680), row,
                  std::max(0, static_cast<int>(rc.right) - pad - px(680)), h,
                  TRUE);
-      const int top = row + h + pad;
-      MoveWindow(state->view.hwnd(), pad, top,
-                 std::max(0, static_cast<int>(rc.right) - 2 * pad),
-                 std::max(0, static_cast<int>(rc.bottom) - top - pad), TRUE);
+      const int row2 = row + h + 2;
+      MoveWindow(state->open_b, pad, row2, px(86), h, TRUE);
+      MoveWindow(state->mode, pad + px(92), row2, px(120), px(180), TRUE);
+      const int top = row2 + h + pad;
+      const int content_h =
+          std::max(0, static_cast<int>(rc.bottom) - top - pad);
+      const bool compare = state->view_mode != 0 && state->yuv_b.isOpen();
+      const int view_w =
+          compare ? std::max(0, (static_cast<int>(rc.right) - 3 * pad) / 2)
+                  : std::max(0, static_cast<int>(rc.right) - 2 * pad);
+      MoveWindow(state->view.hwnd(), pad, top, view_w, content_h, TRUE);
+      MoveWindow(state->view_b.hwnd(), 2 * pad + view_w, top, view_w, content_h,
+                 TRUE);
+      ShowWindow(state->view_b.hwnd(), compare ? SW_SHOW : SW_HIDE);
       return 0;
     }
     case WM_COMMAND:
       if (LOWORD(wparam) == IDC_OPEN) {
         state->openFile();
+        return 0;
+      }
+      if (LOWORD(wparam) == IDC_OPEN_B) {
+        state->openFileB();
+        return 0;
+      }
+      if (LOWORD(wparam) == IDC_MODE && HIWORD(wparam) == CBN_SELCHANGE) {
+        state->view_mode =
+            static_cast<int>(SendMessageW(state->mode, CB_GETCURSEL, 0, 0));
+        SendMessageW(hwnd, WM_SIZE, 0, 0);
+        state->renderFrame();
         return 0;
       }
       if (LOWORD(wparam) == IDC_PREV) {
