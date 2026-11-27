@@ -83,7 +83,9 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
   from the Language menu. The choice is persisted. Specification terms (NAL
   types, SPS/PPS/VPS, syntax field names, codec/profile names) stay in English.
 - **Export**: frame/NAL lists and the CPB model as CSV (UTF-8 with BOM); the
-  current frame as PNG/BMP or native planar YUV.
+  frame table adds per-frame HDR10+ columns (ITM, maxscl, average maxRGB,
+  first processing window); the current frame as PNG/BMP or raw YUV in the
+  native or a selected I420/I422/I444/P010/P210 format.
 
 ## Install on Windows
 

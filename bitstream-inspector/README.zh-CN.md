@@ -67,8 +67,9 @@ Win32 平台的 H.264/H.265 码流分析器：在同一窗口里提供帧列表�
   `%APPDATA%\BitstreamInspector\settings.ini`。
 - **双语界面**：通过“语言”菜单在运行时切换英文/简体中文，选择会被持久化。
   标准术语（NAL 类型、SPS/PPS/VPS、语法字段名、编码/profile 名称）保持英文。
-- **导出**：帧列表、NAL 列表和 CPB 模型导出为 CSV（UTF-8 带 BOM）；当前帧
-  导出 PNG/BMP 或原生 planar YUV。
+- **导出**：帧列表、NAL 列表和 CPB 模型导出为 CSV（UTF-8 带 BOM）；帧表增加
+  逐帧 HDR10+ 列（ITM、maxscl、平均 maxRGB，取第一个处理窗口）；当前帧可导出
+  PNG/BMP 或原生/指定 I420/I422/I444/P010/P210 格式的 raw YUV。
 
 ## Windows 安装
 
