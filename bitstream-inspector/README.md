@@ -71,7 +71,8 @@ See [docs/screenshot.md](docs/screenshot.md) for how to capture a real screensho
 - **Compare**: File > Compare Streams opens two files side by side, with
   display-order/POC/time synchronization and side-by-side, subtraction,
   temperature, PSNR-clip, horizontal-split and vertical-split views; diff
-  modes show per-pair PSNR/SSIM.
+  modes show per-pair PSNR/SSIM. Up to four streams can be compared in a 2x2
+  grid, with the extra streams synchronised to the first.
 - **Overlays**: an optional slice/CTB boundary overlay on the video tab; H.265
   tile boundaries come from the PPS layout.
 - **Thumbnails**: lazy, cached thumbnail strip with GOP boundaries; prev/next

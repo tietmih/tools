@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <commctrl.h>
+#include <commdlg.h>
 
 #include "core/quality.h"
 #include "core/stream.h"
@@ -30,6 +31,12 @@ constexpr int IDC_STATUS = 3105;
 constexpr int IDC_SYNC = 3106;
 constexpr int IDC_DIFF = 3107;
 constexpr int IDC_PSNR = 3108;
+constexpr int IDC_ADD = 3109;
+constexpr int IDC_EXTRA_BASE = 3110;
+
+std::vector<int> displayOrder(const bs::Stream& stream);
+std::vector<int> epochOrder(const bs::Stream& stream,
+                            const std::vector<int>& order);
 
 enum class SyncMode { Frame, Poc, Time };
 enum class ViewMode {
@@ -97,6 +104,15 @@ void makeSplitImage(const ImageData& left, const ImageData& right,
   }
 }
 
+struct ExtraSide {
+  bs::Stream stream;
+  std::unique_ptr<bs::MediaFile> media;
+  std::vector<int> order;
+  std::vector<int> epoch;
+  VideoView view;
+  std::wstring path;
+};
+
 struct State {
   HINSTANCE inst = nullptr;
   HWND hwnd = nullptr;
@@ -106,6 +122,8 @@ struct State {
   HWND sync = nullptr;
   HWND mode = nullptr;
   HWND psnr_box = nullptr;
+  HWND add_button = nullptr;
+  std::vector<std::unique_ptr<ExtraSide>> extra;
   SyncMode sync_mode = SyncMode::Frame;
   ViewMode view_mode = ViewMode::SideBySide;
   VideoView left_view;
@@ -134,26 +152,27 @@ struct State {
     return true;
   }
 
-  int rightIndexForFrame(int left_display) const {
+  int indexForFrame(const bs::Stream& target, const std::vector<int>& order,
+                    const std::vector<int>& epoch, int left_display) const {
     if (left_display < 0 || left_display >= static_cast<int>(left_order.size()))
       return -1;
     const int left_frame = left_order[static_cast<size_t>(left_display)];
     const auto& frame = left.frames()[static_cast<size_t>(left_frame)];
     if (sync_mode == SyncMode::Frame) {
-      if (left_display >= static_cast<int>(right_order.size())) return -1;
-      return right_order[static_cast<size_t>(left_display)];
+      if (left_display >= static_cast<int>(order.size())) return -1;
+      return order[static_cast<size_t>(left_display)];
     }
     if (sync_mode == SyncMode::Poc) {
-      const int epoch = left_epoch[static_cast<size_t>(left_display)];
-      for (size_t i = 0; i < right_order.size(); i++) {
-        const int candidate = right_order[i];
-        if (right.frames()[static_cast<size_t>(candidate)].poc != frame.poc)
+      const int want_epoch = left_epoch[static_cast<size_t>(left_display)];
+      for (size_t i = 0; i < order.size(); i++) {
+        const int candidate = order[i];
+        if (target.frames()[static_cast<size_t>(candidate)].poc != frame.poc)
           continue;
-        if (right_epoch[i] == epoch) return candidate;
+        if (epoch[i] == want_epoch) return candidate;
       }
-      for (size_t i = 0; i < right_order.size(); i++) {
-        const int candidate = right_order[i];
-        if (right.frames()[static_cast<size_t>(candidate)].poc == frame.poc)
+      for (size_t i = 0; i < order.size(); i++) {
+        const int candidate = order[i];
+        if (target.frames()[static_cast<size_t>(candidate)].poc == frame.poc)
           return candidate;
       }
       return -1;
@@ -161,10 +180,10 @@ struct State {
     if (!frame.has_timing) return -1;
     int best = -1;
     double best_delta = 1e9;
-    for (size_t i = 0; i < right_order.size(); i++) {
-      const int candidate_index = right_order[i];
+    for (size_t i = 0; i < order.size(); i++) {
+      const int candidate_index = order[i];
       const auto& candidate =
-          right.frames()[static_cast<size_t>(candidate_index)];
+          target.frames()[static_cast<size_t>(candidate_index)];
       if (!candidate.has_timing) continue;
       const double delta = std::fabs(candidate.time_sec - frame.time_sec);
       if (delta < best_delta) {
@@ -173,6 +192,10 @@ struct State {
       }
     }
     return best;
+  }
+
+  int rightIndexForFrame(int left_display) const {
+    return indexForFrame(right, right_order, right_epoch, left_display);
   }
 
   void updateStatus(int right_frame) {
@@ -304,7 +327,80 @@ struct State {
     } else {
       right_view.clear(wide(error));
     }
+    for (size_t i = 0; i < extra.size(); i++) {
+      ExtraSide& side = *extra[i];
+      const int index =
+          indexForFrame(side.stream, side.order, side.epoch, frame);
+      if (index < 0) {
+        side.view.clear(tr(L"no matching frame", L"无匹配帧"));
+        continue;
+      }
+      ImageData image;
+      if (render(side.stream, side.media.get(), index, image, keyframe_only,
+                 error)) {
+        const std::wstring label =
+            tr(L"stream ", L"码流 ") + std::to_wstring(i + 3);
+        side.view.setImage(std::move(image), label);
+      } else {
+        side.view.clear(wide(error));
+      }
+    }
     updateStatus(right_frame);
+    if (!extra.empty() && status) {
+      std::wstring text(512, L'\0');
+      const int len = GetWindowTextW(status, &text[0], 512);
+      text.resize(static_cast<size_t>(std::max(0, len)));
+      for (size_t i = 0; i < extra.size(); i++) {
+        ExtraSide& side = *extra[i];
+        const int index =
+            indexForFrame(side.stream, side.order, side.epoch, frame);
+        text += L" / ";
+        if (index >= 0)
+          text += L"POC " +
+                  std::to_wstring(
+                      side.stream.frames()[static_cast<size_t>(index)].poc);
+        else
+          text += L"-";
+      }
+      SetWindowTextW(status, text.c_str());
+    }
+  }
+
+  void addStream() {
+    if (extra.size() >= 2) {
+      MessageBoxW(hwnd,
+                  tr(L"At most four streams can be compared.",
+                     L"最多只能对比四路码流。"),
+                  tr(L"Compare Streams", L"码流对比"),
+                  MB_OK | MB_ICONINFORMATION);
+      return;
+    }
+    wchar_t file[32768] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = tr(L"Media files (*.*)\0*.*\0All files (*.*)\0*.*\0",
+                         L"媒体文件 (*.*)\0*.*\0所有文件 (*.*)\0*.*\0");
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = 32768;
+    ofn.lpstrTitle = tr(L"Add a stream to compare", L"添加对比码流");
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER;
+    if (!GetOpenFileNameW(&ofn)) return;
+    auto side = std::make_unique<ExtraSide>();
+    std::string error;
+    if (!load(file, side->stream, side->media, error)) {
+      MessageBoxW(hwnd, wide(error).c_str(), tr(L"Compare failed", L"对比失败"),
+                  MB_OK | MB_ICONERROR);
+      return;
+    }
+    side->order = displayOrder(side->stream);
+    side->epoch = epochOrder(side->stream, side->order);
+    side->path = file;
+    side->view.create(hwnd, inst,
+                      IDC_EXTRA_BASE + static_cast<int>(extra.size()));
+    extra.push_back(std::move(side));
+    SendMessageW(hwnd, WM_SIZE, 0, 0);
+    showFrame();
   }
 };
 
@@ -365,6 +461,11 @@ LRESULT CALLBACK compareProc(HWND hwnd, UINT msg, WPARAM wparam,
           0, L"STATIC", L"-", WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 0, 0, hwnd,
           reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PSNR)), state->inst,
           nullptr);
+      state->add_button = CreateWindowExW(
+          0, L"BUTTON", tr(L"Add Stream...", L"添加码流..."),
+          WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd,
+          reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_ADD)), state->inst,
+          nullptr);
       SendMessageW(state->sync, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont()),
                    TRUE);
       SendMessageW(state->mode, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont()),
@@ -376,6 +477,8 @@ LRESULT CALLBACK compareProc(HWND hwnd, UINT msg, WPARAM wparam,
       SendMessageW(state->next, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont()),
                    TRUE);
       SendMessageW(state->status, WM_SETFONT,
+                   reinterpret_cast<WPARAM>(uiFont()), TRUE);
+      SendMessageW(state->add_button, WM_SETFONT,
                    reinterpret_cast<WPARAM>(uiFont()), TRUE);
       state->showFrame();
       return 0;
@@ -389,16 +492,31 @@ LRESULT CALLBACK compareProc(HWND hwnd, UINT msg, WPARAM wparam,
       MoveWindow(state->next, pad + px(86), pad, px(80), button_h, TRUE);
       MoveWindow(state->sync, pad + px(172), pad, px(130), px(200), TRUE);
       MoveWindow(state->mode, pad + px(308), pad, px(150), px(220), TRUE);
-      MoveWindow(state->psnr_box, pad + px(464), pad, px(190), button_h, TRUE);
-      MoveWindow(state->status, pad + px(660), pad,
-                 std::max(0, static_cast<int>(rc.right) - pad - px(660)),
+      MoveWindow(state->psnr_box, pad + px(464), pad, px(140), button_h, TRUE);
+      MoveWindow(state->add_button, pad + px(610), pad, px(110), button_h,
+                 TRUE);
+      MoveWindow(state->status, pad + px(726), pad,
+                 std::max(0, static_cast<int>(rc.right) - pad - px(726)),
                  button_h, TRUE);
       const int top = pad + button_h + pad;
       const int height = std::max(0, static_cast<int>(rc.bottom) - top - pad);
-      const int width = std::max(0, (static_cast<int>(rc.right) - 3 * pad) / 2);
-      MoveWindow(state->left_view.hwnd(), pad, top, width, height, TRUE);
-      MoveWindow(state->right_view.hwnd(), 2 * pad + width, top, width, height,
-                 TRUE);
+      const int count = 2 + static_cast<int>(state->extra.size());
+      const int columns = 2;
+      const int rows = (count + columns - 1) / columns;
+      const int cell_w = std::max(
+          0, (static_cast<int>(rc.right) - (columns + 1) * pad) / columns);
+      const int cell_h =
+          std::max(0, (height - (rows - 1) * pad) / std::max(1, rows));
+      auto place = [&](VideoView& view, int index) {
+        const int column = index % columns;
+        const int row = index / columns;
+        MoveWindow(view.hwnd(), pad + column * (cell_w + pad),
+                   top + row * (cell_h + pad), cell_w, cell_h, TRUE);
+      };
+      place(state->left_view, 0);
+      place(state->right_view, 1);
+      for (size_t i = 0; i < state->extra.size(); i++)
+        place(state->extra[i]->view, 2 + static_cast<int>(i));
       return 0;
     }
     case WM_COMMAND:
@@ -410,6 +528,10 @@ LRESULT CALLBACK compareProc(HWND hwnd, UINT msg, WPARAM wparam,
       if (LOWORD(wparam) == IDC_NEXT) {
         state->frame++;
         state->showFrame();
+        return 0;
+      }
+      if (LOWORD(wparam) == IDC_ADD) {
+        state->addStream();
         return 0;
       }
       if (LOWORD(wparam) == IDC_SYNC && HIWORD(wparam) == CBN_SELCHANGE) {
