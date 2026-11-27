@@ -40,6 +40,8 @@ python3 "$ROOT/tests/check_headers.py" --ffmpeg "$REF_FFMPEG" \
     --bsinfo "$BUILD/bsinfo" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_sei.py" --ffmpeg "$REF_FFMPEG" \
     --bsinfo "$BUILD/bsinfo" --vectors "$VECTORS"
+python3 "$ROOT/tests/check_hdr10plus.py" --ffprobe "$FFPROBE" \
+    --bsinfo "$BUILD/bsinfo" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_hrd.py" --ffmpeg "$REF_FFMPEG" \
     --bsinfo "$BUILD/bsinfo" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_cli.py" --bsinfo "$BUILD/bsinfo" \

@@ -295,6 +295,21 @@ void Stream::analyzeH264(std::string& error) {
   int last_slice_frame_num = -1;
   bool last_slice_idr = false;
 
+  SeiHdr10Plus pending_hdr10plus;
+
+  auto applyHdr10Plus = [&](FrameInfo& frame, const SeiHdr10Plus& hp) {
+    frame.hdr10plus.present = true;
+    frame.hdr10plus.num_windows = hp.num_windows;
+    frame.hdr10plus.targeted_max_luminance_raw = hp.targeted_max_luminance_raw;
+    if (!hp.windows.empty()) {
+      const SeiHdr10PlusWindow& w = hp.windows.front();
+      for (int c = 0; c < 3; c++) frame.hdr10plus.maxscl[c] = w.maxscl[c];
+      frame.hdr10plus.average_maxrgb = w.average_maxrgb;
+      frame.hdr10plus.fraction_bright_pixels = w.fraction_bright_pixels;
+      frame.hdr10plus.tone_mapping = w.tone_mapping;
+    }
+  };
+
   auto flush_frame = [&]() {
     if (!have_frame) return;
     cur.index = decode_index++;
@@ -382,6 +397,10 @@ void Stream::analyzeH264(std::string& error) {
         if (new_picture) {
           flush_frame();
           cur = FrameInfo();
+          if (pending_hdr10plus.present) {
+            applyHdr10Plus(cur, pending_hdr10plus);
+            pending_hdr10plus = SeiHdr10Plus();
+          }
           cur.poc = info.poc;
           cur.idr = info.idr;
           cur.irap = info.idr;
@@ -417,6 +436,10 @@ void Stream::analyzeH264(std::string& error) {
       e.summary = "SEI";
       if (!e.sei.messages.empty()) e.summary += ": " + seiSummary(e.sei);
       mergeSeiHdr(hdr_, e.sei.hdr);
+      if (e.sei.hdr.hdr10plus.present) {
+        pending_hdr10plus = e.sei.hdr.hdr10plus;
+        if (have_frame) applyHdr10Plus(cur, pending_hdr10plus);
+      }
     } else if (type == 9) {
       e.summary = "access unit delimiter";
     } else if (type == 12) {
@@ -449,6 +472,21 @@ void Stream::analyzeH265(std::string& error) {
   bool have_frame = false;
   FrameInfo cur;
   int last_addr = -1;
+
+  SeiHdr10Plus pending_hdr10plus;
+
+  auto applyHdr10Plus = [&](FrameInfo& frame, const SeiHdr10Plus& hp) {
+    frame.hdr10plus.present = true;
+    frame.hdr10plus.num_windows = hp.num_windows;
+    frame.hdr10plus.targeted_max_luminance_raw = hp.targeted_max_luminance_raw;
+    if (!hp.windows.empty()) {
+      const SeiHdr10PlusWindow& w = hp.windows.front();
+      for (int c = 0; c < 3; c++) frame.hdr10plus.maxscl[c] = w.maxscl[c];
+      frame.hdr10plus.average_maxrgb = w.average_maxrgb;
+      frame.hdr10plus.fraction_bright_pixels = w.fraction_bright_pixels;
+      frame.hdr10plus.tone_mapping = w.tone_mapping;
+    }
+  };
 
   auto flush_frame = [&]() {
     if (!have_frame) return;
@@ -553,6 +591,10 @@ void Stream::analyzeH265(std::string& error) {
         if (new_picture) {
           flush_frame();
           cur = FrameInfo();
+          if (pending_hdr10plus.present) {
+            applyHdr10Plus(cur, pending_hdr10plus);
+            pending_hdr10plus = SeiHdr10Plus();
+          }
           cur.idr = info.idr;
           cur.irap = info.irap;
           cur.ref = true;
@@ -602,6 +644,10 @@ void Stream::analyzeH265(std::string& error) {
       e.summary = type == 39 ? "prefix SEI" : "suffix SEI";
       if (!e.sei.messages.empty()) e.summary += ": " + seiSummary(e.sei);
       mergeSeiHdr(hdr_, e.sei.hdr);
+      if (e.sei.hdr.hdr10plus.present) {
+        pending_hdr10plus = e.sei.hdr.hdr10plus;
+        if (have_frame) applyHdr10Plus(cur, pending_hdr10plus);
+      }
     }
     nals_.push_back(std::move(e));
   }
@@ -1405,7 +1451,7 @@ void Stream::applyFrameTiming(const std::vector<FrameTiming>& timing) {
 std::string Stream::framesCsv() const {
   std::string out =
       "index,type,idr,poc,qp,frame_num,size_bytes,file_offset,slices,nals,"
-      "time_ms\r\n";
+      "time_ms,hdr10plus,itm_nits,maxscl_max,avg_maxrgb\r\n";
   const double fps = this->fps();
   for (const auto& f : frames_) {
     out += std::to_string(f.index);
@@ -1432,6 +1478,23 @@ std::string Stream::framesCsv() const {
       double ms = frameTimeMs(f);
       if (ms >= 0.0 && ms < 9.0e15)
         out += std::to_string(static_cast<long long>(ms + 0.5));
+    }
+    out += ',';
+    if (f.hdr10plus.present) {
+      out += '1';
+      out += ',';
+      out += std::to_string(
+          static_cast<double>(f.hdr10plus.targeted_max_luminance_raw) /
+          10000.0);
+      const int maxscl = std::max({f.hdr10plus.maxscl[0], f.hdr10plus.maxscl[1],
+                                   f.hdr10plus.maxscl[2]});
+      out += ',';
+      out += std::to_string(static_cast<double>(maxscl) / 100000.0);
+      out += ',';
+      out += std::to_string(static_cast<double>(f.hdr10plus.average_maxrgb) /
+                            100000.0);
+    } else {
+      out += "0,,,";
     }
     out += "\r\n";
   }

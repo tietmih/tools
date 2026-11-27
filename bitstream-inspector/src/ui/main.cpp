@@ -897,6 +897,16 @@ void updateStatus() {
             wide(g_app.stream.frameTypeName(f)) + L"   POC " +
             std::to_wstring(f.poc) + L"   QP " + std::to_wstring(f.qp) +
             L"   " + std::to_wstring(f.byte_size) + tr(L" B", L" 字节");
+    if (f.hdr10plus.present) {
+      wchar_t hdr[96];
+      const int maxscl = std::max({f.hdr10plus.maxscl[0], f.hdr10plus.maxscl[1],
+                                   f.hdr10plus.maxscl[2]});
+      swprintf(
+          hdr, 96, L"   |   HDR10+ ITM %.0f nits  maxscl %.3f",
+          static_cast<double>(f.hdr10plus.targeted_max_luminance_raw) / 10000.0,
+          static_cast<double>(maxscl) / 100000.0);
+      right += hdr;
+    }
     if (f.refs.computed) {
       right += tr(L"   |   L0 ", L"   |   L0 ");
       for (size_t i = 0; i < f.refs.l0_pocs.size(); i++)

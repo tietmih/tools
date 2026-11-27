@@ -31,16 +31,36 @@ struct SeiAlternativeTransfer {
   uint8_t preferred_transfer_characteristics = 0;
 };
 
+// One processing window of an HDR10+ (SMPTE ST 2094-40) message.
+struct SeiHdr10PlusWindow {
+  int maxscl[3] = {};              // 17-bit linear RGB, 1/100000 units
+  int average_maxrgb = 0;          // 17-bit linear RGB, 1/100000 units
+  int num_percentiles = 0;         // 0..15
+  int fraction_bright_pixels = 0;  // 10-bit, 1/1000 units
+  bool tone_mapping = false;
+  int knee_point_x = 0;        // 12-bit, 1/4095 units
+  int knee_point_y = 0;        // 12-bit, 1/4095 units
+  int num_bezier_anchors = 0;  // 0..15
+  bool saturation_mapping = false;
+  int saturation_weight = 0;  // 6-bit, 1/8 units
+};
+
+// Decoded HDR10+ dynamic metadata carried in an ITU-T T.35 SEI.
+struct SeiHdr10Plus {
+  bool present = false;
+  int application_version = 0;
+  int num_windows = 0;
+  int targeted_max_luminance_raw = 0;  // 27-bit, 0.0001 cd/m^2 units
+  std::vector<SeiHdr10PlusWindow> windows;
+};
+
 struct SeiHdrInfo {
   SeiMasteringDisplay mastering_display;
   SeiContentLightLevel content_light_level;
   SeiAlternativeTransfer alternative_transfer;
   bool hdr10_plus = false;
   bool dolby_vision = false;
-  int hdr10_plus_itm = 0;     // targeted system display max, nits
-  int hdr10_plus_maxscl = 0;  // max scene content light level
-  int hdr10_plus_average_maxrgb = 0;
-  int hdr10_plus_application_version = 0;
+  SeiHdr10Plus hdr10plus;
 };
 
 struct SeiMessage {

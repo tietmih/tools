@@ -366,6 +366,116 @@ void parseRecoveryPoint(FieldReader& r, bool hevc) {
   if (!hevc) r.u(2, "changing_slice_group_idc");
 }
 
+void parseHdr10Plus(FieldReader& r, SeiHdrInfo& out) {
+  SeiHdr10Plus& hp = out.hdr10plus;
+  hp.present = true;
+  auto left = [&]() { return r.br().bits_left(); };
+
+  if (left() < 10) return;
+  hp.application_version = static_cast<int>(r.u(8, "application_version"));
+  hp.num_windows = static_cast<int>(r.u(2, "num_windows"));
+  if (hp.num_windows < 1 || hp.num_windows > 3) {
+    hp.num_windows = 0;
+    return;
+  }
+  // Windows after the first carry explicit geometry: 19 bytes + 1 bit each.
+  for (int w = 1; w < hp.num_windows; w++) {
+    if (left() < 153) {
+      r.error("HDR10+ window geometry truncated");
+      return;
+    }
+    r.skip(16, "window_upper_left_corner_x");
+    r.skip(16, "window_upper_left_corner_y");
+    r.skip(16, "window_lower_right_corner_x");
+    r.skip(16, "window_lower_right_corner_y");
+    r.skip(16, "center_of_ellipse_x");
+    r.skip(16, "center_of_ellipse_y");
+    r.skip(8, "rotation_angle");
+    r.skip(16, "semimajor_axis_internal_ellipse");
+    r.skip(16, "semimajor_axis_external_ellipse");
+    r.skip(16, "semiminor_axis_external_ellipse");
+    r.skip(1, "overlap_process_option");
+  }
+  if (left() < 28) {
+    r.error("HDR10+ targeted luminance truncated");
+    return;
+  }
+  hp.targeted_max_luminance_raw =
+      static_cast<int>(r.u(27, "targeted_system_display_maximum_luminance"));
+  const bool targeted_peak =
+      r.u(1, "targeted_system_display_actual_peak_luminance_flag") != 0;
+  if (targeted_peak) {
+    if (left() < 10) return;
+    const uint32_t rows = r.u(5, "num_rows_targeted_system_display");
+    const uint32_t cols = r.u(5, "num_cols_targeted_system_display");
+    if (rows < 2 || rows > 25 || cols < 2 || cols > 25) return;
+    if (left() < rows * cols * 4) return;
+    r.skip(static_cast<int>(rows * cols * 4), "targeted_peak_luminance");
+  }
+
+  hp.windows.clear();
+  hp.windows.resize(static_cast<size_t>(hp.num_windows));
+  for (int w = 0; w < hp.num_windows; w++) {
+    SeiHdr10PlusWindow& win = hp.windows[static_cast<size_t>(w)];
+    if (left() < 3 * 17 + 17 + 4 + 10) {
+      r.error("HDR10+ window statistics truncated");
+      return;
+    }
+    for (int c = 0; c < 3; c++)
+      win.maxscl[c] = static_cast<int>(r.u(17, "maxscl"));
+    win.average_maxrgb = static_cast<int>(r.u(17, "average_maxrgb"));
+    win.num_percentiles =
+        static_cast<int>(r.u(4, "num_distribution_maxrgb_percentiles"));
+    if (win.num_percentiles > 15 ||
+        left() < static_cast<uint64_t>(win.num_percentiles) * 24 + 10) {
+      r.error("HDR10+ percentiles truncated");
+      return;
+    }
+    for (int i = 0; i < win.num_percentiles; i++) {
+      r.skip(7, "percentage");
+      r.skip(17, "percentile");
+    }
+    win.fraction_bright_pixels =
+        static_cast<int>(r.u(10, "fraction_bright_pixels"));
+  }
+
+  if (left() < 1) return;
+  const bool mastering_peak =
+      r.u(1, "mastering_display_actual_peak_luminance_flag") != 0;
+  if (mastering_peak) {
+    if (left() < 10) return;
+    const uint32_t rows = r.u(5, "num_rows_mastering_display");
+    const uint32_t cols = r.u(5, "num_cols_mastering_display");
+    if (rows < 2 || rows > 25 || cols < 2 || cols > 25) return;
+    if (left() < rows * cols * 4) return;
+    r.skip(static_cast<int>(rows * cols * 4), "mastering_peak_luminance");
+  }
+
+  for (int w = 0; w < hp.num_windows; w++) {
+    SeiHdr10PlusWindow& win = hp.windows[static_cast<size_t>(w)];
+    if (left() < 1) return;
+    win.tone_mapping = r.u(1, "tone_mapping_flag") != 0;
+    if (win.tone_mapping) {
+      if (left() < 28) return;
+      win.knee_point_x = static_cast<int>(r.u(12, "knee_point_x"));
+      win.knee_point_y = static_cast<int>(r.u(12, "knee_point_y"));
+      win.num_bezier_anchors =
+          static_cast<int>(r.u(4, "num_bezier_curve_anchors"));
+      if (win.num_bezier_anchors > 15 ||
+          left() < static_cast<uint64_t>(win.num_bezier_anchors) * 10)
+        return;
+      r.skip(win.num_bezier_anchors * 10, "bezier_curve_anchors");
+    }
+    if (left() < 1) return;
+    win.saturation_mapping = r.u(1, "color_saturation_mapping_flag") != 0;
+    if (win.saturation_mapping) {
+      if (left() < 6) return;
+      win.saturation_weight =
+          static_cast<int>(r.u(6, "color_saturation_weight"));
+    }
+  }
+}
+
 void parseRegisteredUserData(FieldReader& r, uint32_t size, SeiInfo& out) {
   if (size < 1) return;
   uint32_t country = r.u(8, "itu_t_t35_country_code");
@@ -381,16 +491,9 @@ void parseRegisteredUserData(FieldReader& r, uint32_t size, SeiInfo& out) {
   }
   if (country == 0xB5 && provider == 0x003C && oriented == 0x0001) {
     out.hdr.hdr10_plus = true;
-    // HDR10+ (SMPTE ST 2094-40 over T.35) carries an application identifier
-    // and version before the window metadata. Only the identification header
-    // is decoded here; the dynamic window payload needs a full ST 2094-40
-    // parser and test vectors that are not available yet.
     if (r.br().bits_left() >= 8) {
-      uint32_t app_id = r.u(8, "application_identifier");
-      if (app_id == 4 && r.br().bits_left() >= 8) {
-        out.hdr.hdr10_plus_application_version =
-            static_cast<int>(r.u(8, "application_version"));
-      }
+      const uint32_t app_id = r.u(8, "application_identifier");
+      if (app_id == 4) parseHdr10Plus(r, out.hdr);
     }
     return;
   }
@@ -699,12 +802,7 @@ void mergeSeiHdr(SeiHdrInfo& dst, const SeiHdrInfo& src) {
     dst.alternative_transfer = src.alternative_transfer;
   dst.hdr10_plus = dst.hdr10_plus || src.hdr10_plus;
   dst.dolby_vision = dst.dolby_vision || src.dolby_vision;
-  if (src.hdr10_plus) {
-    dst.hdr10_plus_itm = src.hdr10_plus_itm;
-    dst.hdr10_plus_maxscl = src.hdr10_plus_maxscl;
-    dst.hdr10_plus_average_maxrgb = src.hdr10_plus_average_maxrgb;
-    dst.hdr10_plus_application_version = src.hdr10_plus_application_version;
-  }
+  if (src.hdr10plus.present) dst.hdr10plus = src.hdr10plus;
 }
 
 std::string formatHdrSummary(const SeiHdrInfo& sei,
@@ -756,6 +854,16 @@ std::string formatHdrSummary(const SeiHdrInfo& sei,
     std::snprintf(buf, sizeof(buf), " MaxCLL %u/%u",
                   static_cast<unsigned>(cll.max_cll),
                   static_cast<unsigned>(cll.max_fall));
+    text += buf;
+  }
+  if (sei.hdr10plus.present && !sei.hdr10plus.windows.empty()) {
+    const SeiHdr10PlusWindow& w = sei.hdr10plus.windows.front();
+    const double itm =
+        static_cast<double>(sei.hdr10plus.targeted_max_luminance_raw) / 10000.0;
+    std::snprintf(buf, sizeof(buf), " ITM %.0f nits maxscl %.3f/%.3f/%.3f", itm,
+                  static_cast<double>(w.maxscl[0]) / 100000.0,
+                  static_cast<double>(w.maxscl[1]) / 100000.0,
+                  static_cast<double>(w.maxscl[2]) / 100000.0);
     text += buf;
   }
   return text;

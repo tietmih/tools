@@ -45,6 +45,8 @@ python3 "$ROOT/tests/check_headers.py" --bsinfo "$BUILD/bsinfo" \
     --ffmpeg "$FFMPEG" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_sei.py" --bsinfo "$BUILD/bsinfo" \
     --ffmpeg "$REF_FFMPEG" --vectors "$VECTORS"
+python3 "$ROOT/tests/check_hdr10plus.py" --bsinfo "$BUILD/bsinfo" \
+    --ffprobe "$FFPROBE" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_hrd.py" --bsinfo "$BUILD/bsinfo" \
     --ffmpeg "$REF_FFMPEG" --vectors "$VECTORS"
 python3 "$ROOT/tests/check_cli.py" --bsinfo "$BUILD/bsinfo" \

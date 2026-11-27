@@ -235,7 +235,7 @@ bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
 bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB occupancy model
 bsinfo stream.h264 --bits --csv-bits b.csv  # per-AU bit allocation
 bsinfo stream.h264 --conformance       # Annex A limit checks
-bsinfo stream.h264 --hdr               # HDR metadata summary/consistency
+bsinfo stream.h264 --hdr               # HDR summary/consistency (incl. HDR10+ ITM)
 bsinfo stream.h264 --json             # machine-readable output
 bsinfo --batch vectors/               # JSON array for a directory
 ```
@@ -304,8 +304,9 @@ containers.
   reconstructed Annex B stream, not the container file.
 - 10/12-bit preview RGB conversion can differ from the FFmpeg CLI by a few
   levels; decode correctness is checked with a bounded pixel tolerance.
-- SEI details cover HDR (MDCV/CLL/ATC), HDR10+ identification, recovery point,
-  T.35 and user data; HDR10+ dynamic window metadata is not decoded, and other
+- SEI details cover HDR (MDCV/CLL/ATC), HDR10+ identification and dynamic
+  metadata (targeted display luminance, maxscl, average maxRGB, percentiles,
+  tone mapping and saturation), recovery point, T.35 and user data; other
   payload types are listed by type.
 - Multi-PPS streams that alternate between several PPS ids are parsed with the
   most recently activated state.

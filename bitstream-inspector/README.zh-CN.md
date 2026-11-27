@@ -212,7 +212,7 @@ bsinfo stream.h264 --csv-frames f.csv --csv-nals n.csv
 bsinfo stream.h264 --cpb --csv-cpb cpb.csv  # CPB 占用模型
 bsinfo stream.h264 --bits --csv-bits b.csv  # 逐 AU 比特分配
 bsinfo stream.h264 --conformance       # Annex A 限制检查
-bsinfo stream.h264 --hdr               # HDR 元数据摘要/一致性
+bsinfo stream.h264 --hdr               # HDR 摘要/一致性（含 HDR10+ ITM）
 bsinfo stream.h264 --json             # 机器可读输出
 bsinfo --batch vectors/               # 目录的 JSON 数组
 ```
@@ -277,8 +277,9 @@ mtest stream.h264 --ref ref.yuv --quality  # 逐帧 PSNR/SSIM
 - 容器输入的 `偏移` 列是重构后的 Annex B 流内偏移，不是容器文件偏移。
 - 10/12-bit 预览的 RGB 转换可能与 FFmpeg CLI 相差几个等级；解码正确性用有界
   像素容差检查。
-- SEI 详细解析覆盖 HDR（MDCV/CLL/ATC）、HDR10+ 识别、recovery point、T.35 和
-  用户数据；HDR10+ 动态窗口元数据未解码，其他 payload 只列出类型。
+- SEI 详细解析覆盖 HDR（MDCV/CLL/ATC）、HDR10+ 识别与动态元数据（目标显示亮度、
+  maxscl、平均 maxRGB、分位数、tone mapping、饱和度）、recovery point、T.35 和
+  用户数据；其他 payload 只列出类型。
 - 多 PPS 流在多个 PPS id 之间切换时，使用最近一次激活的参数集解析。
 
 ## 目录结构

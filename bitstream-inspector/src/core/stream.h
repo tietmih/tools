@@ -46,6 +46,16 @@ struct BitAllocation {
   uint64_t total = 0;
 };
 
+struct Hdr10PlusFrame {
+  bool present = false;
+  int num_windows = 0;
+  int targeted_max_luminance_raw = 0;  // 0.0001 cd/m^2 units
+  int maxscl[3] = {};                  // window 0, 1/100000 linear RGB
+  int average_maxrgb = 0;              // window 0, 1/100000 linear RGB
+  int fraction_bright_pixels = 0;      // window 0, 1/1000
+  bool tone_mapping = false;
+};
+
 struct FrameInfo {
   int index = 0;  // decode order index within the stream
   int poc = 0;
@@ -72,6 +82,7 @@ struct FrameInfo {
   H265SliceInfo h265_slice;
   FrameRefs refs;
   BitAllocation bits;
+  Hdr10PlusFrame hdr10plus;
   std::vector<int> slice_addresses;
   // Filled in when the stream came from a container (or a demuxer with timing).
   int64_t pts = 0;
