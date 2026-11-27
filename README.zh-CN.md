@@ -140,7 +140,7 @@ gh run list --workflow release.yml --limit 1
 
 | 工具 | 版本 | Tag / Release |
 |---|---|---|
-| bitstream-inspector | 0.4.0 | [`bitstream-inspector-v0.4.0`](https://github.com/tietmih/tools/releases/tag/bitstream-inspector-v0.4.0) |
+| bitstream-inspector | 0.5.0 | [`bitstream-inspector-v0.5.0`](https://github.com/tietmih/tools/releases/tag/bitstream-inspector-v0.5.0) |
 
 ## 构建
 

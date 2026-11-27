@@ -5,6 +5,37 @@
 记录 Bitstream Inspector 的重要变更。本工具独立于仓库中其他工具进行版本管理和
 发布，tag 格式为 `bitstream-inspector-v<version>`。
 
+## [0.5.0] - 2026-11-27
+
+### 新增
+
+- 质量 GUI：加载参考 YUV，在后台逐帧计算 PSNR/SSIM/MSE/MSAD，显示质量图表和
+  参考差异视图，并可将逐帧指标导出为 CSV。
+- 码流对比：支持按显示顺序/POC/时间同步；相减、温度图、PSNR 裁剪、水平分割、
+  垂直分割视图；最多四路码流按 2x2 网格对比，额外码流与第一路同步。
+- 独立 YUV 查看器：I420/I422/I444/P010/P210/P012/P212、矩阵/范围选择、逐帧
+  导航；可打开第二个文件做并排或差异比较并显示 PSNR/SSIM。
+- `yuvcmp` CLI：逐帧比较两个 raw planar YUV 文件。
+- 质量指标、`mtest --quality` 输出和 CSV 增加 MSE/MSAD。
+- 码率图表支持 1/2/5 秒窗口切换。
+- HDR10+（SMPTE ST 2094-40）识别与完整动态元数据解析：处理窗口、目标显示
+  亮度、maxscl、平均 maxRGB、分位数、tone mapping、饱和度；帧 CSV 增加逐帧
+  HDR10+ 列，状态栏显示摘要。
+- `bsinfo --hdr` 和合规报告增加 HDR 元数据一致性检查（MaxCLL/MaxFALL 与主控
+  显示、HDR10+ 与 PQ）。
+- 画面支持 Y/Cb/Cr 单分量显示。
+- YUV 导出支持原生格式以及 I420/I422/I444/P010/P210。
+
+### 修复
+
+- >8-bit raw YUV 导出改为低位对齐，与 ffmpeg rawvideo 和参考 YUV 读取器一致。
+- HDR10+ prefix SEI 归属下一帧、HEVC suffix SEI 归属当前帧，不再错误污染前一帧。
+
+### 已知限制
+
+- 内置 FFmpeg 构建未启用 HEIC 和 MPEG-1 System 容器；未实现 VQM/NQI/VMAF。
+- 多路对比窗口中差异指标只作用于前两路，附加码流显示正常画面。
+
 ## [0.4.0] - 2026-11-26
 
 ### 新增

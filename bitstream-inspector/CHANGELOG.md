@@ -6,6 +6,47 @@ All notable changes to Bitstream Inspector. The tool is versioned and released
 independently from the rest of the repository. Tags use the form
 `bitstream-inspector-v<version>`.
 
+## [0.5.0] - 2026-11-27
+
+### Added
+
+- Quality GUI: load a reference YUV, compute per-frame PSNR/SSIM/MSE/MSAD in a
+  background worker, show a quality chart and reference difference view, and
+  export the per-frame metrics as CSV.
+- Compare Streams: display-order/POC/time synchronization; subtraction,
+  temperature, PSNR-clip, horizontal-split and vertical-split views; and up to
+  four streams in a 2x2 grid, with the extra streams synchronized to the
+  first.
+- Standalone YUV Viewer for I420/I422/I444/P010/P210/P012/P212 with
+  matrix/range controls, frame navigation, and an optional second input with
+  side-by-side or difference views and PSNR/SSIM.
+- `yuvcmp` CLI that compares two raw planar YUV files frame by frame.
+- MSE/MSAD in the quality metrics, `mtest --quality` output and CSV.
+- Selectable 1/2/5-second bitrate window in the bits chart.
+- HDR10+ (SMPTE ST 2094-40) identification and full dynamic metadata parsing:
+  processing windows, targeted display luminance, maxscl, average maxRGB,
+  percentiles, tone mapping and saturation. Per-frame HDR10+ columns in the
+  frame CSV and a status-bar summary.
+- HDR metadata consistency checks (MaxCLL/MaxFALL vs the mastering display and
+  HDR10+ vs PQ) in `bsinfo --hdr` and the conformance report.
+- Y/Cb/Cr single-component video display.
+- YUV export in the native layout or a selected I420/I422/I444/P010/P210
+  format.
+
+### Fixed
+
+- Raw YUV export now writes >8-bit samples low-aligned, matching ffmpeg
+  rawvideo and the reference YUV reader.
+- HDR10+ prefix SEI is attached to the following picture and HEVC suffix SEI to
+  the current picture instead of leaking onto the previous frame.
+
+### Known limitations
+
+- HEIC and MPEG-1 System containers are not enabled in the bundled FFmpeg
+  build; VQM/NQI/VMAF metrics are not implemented.
+- Difference metrics in the multi-stream compare window apply to the first two
+  streams; the additional streams show normal pictures.
+
 ## [0.4.0] - 2026-11-26
 
 ### Added
