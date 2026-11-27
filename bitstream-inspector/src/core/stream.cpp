@@ -436,10 +436,7 @@ void Stream::analyzeH264(std::string& error) {
       e.summary = "SEI";
       if (!e.sei.messages.empty()) e.summary += ": " + seiSummary(e.sei);
       mergeSeiHdr(hdr_, e.sei.hdr);
-      if (e.sei.hdr.hdr10plus.present) {
-        pending_hdr10plus = e.sei.hdr.hdr10plus;
-        if (have_frame) applyHdr10Plus(cur, pending_hdr10plus);
-      }
+      if (e.sei.hdr.hdr10plus.present) pending_hdr10plus = e.sei.hdr.hdr10plus;
     } else if (type == 9) {
       e.summary = "access unit delimiter";
     } else if (type == 12) {
@@ -645,8 +642,15 @@ void Stream::analyzeH265(std::string& error) {
       if (!e.sei.messages.empty()) e.summary += ": " + seiSummary(e.sei);
       mergeSeiHdr(hdr_, e.sei.hdr);
       if (e.sei.hdr.hdr10plus.present) {
-        pending_hdr10plus = e.sei.hdr.hdr10plus;
-        if (have_frame) applyHdr10Plus(cur, pending_hdr10plus);
+        if (type == 40) {
+          if (have_frame) {
+            applyHdr10Plus(cur, e.sei.hdr.hdr10plus);
+          } else if (!frames_.empty()) {
+            applyHdr10Plus(frames_.back(), e.sei.hdr.hdr10plus);
+          }
+        } else {
+          pending_hdr10plus = e.sei.hdr.hdr10plus;
+        }
       }
     }
     nals_.push_back(std::move(e));
